@@ -1,0 +1,56 @@
+import Foundation
+
+/// Appends one JSON object per line to a file. Thread-safe.
+final class NDJSONWriter: @unchecked Sendable {
+    private let handle: FileHandle
+    private let lock = NSLock()
+    private let encoder: JSONEncoder
+
+    init(_ url: URL) throws {
+        try FileManager.default.ensureDirectory(url.deletingLastPathComponent())
+        FileManager.default.createFile(atPath: url.path, contents: nil)
+        handle = try FileHandle(forWritingTo: url)
+        encoder = JSONEncoder()
+        encoder.outputFormatting = [.withoutEscapingSlashes, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+    }
+
+    func write<T: Encodable>(_ value: T) {
+        guard var data = try? encoder.encode(value) else { return }
+        data.append(0x0A)
+        lock.withLock { handle.write(data) }
+    }
+
+    func close() {
+        lock.withLock { try? handle.close() }
+    }
+}
+
+/// Enforce-mode record: every denial plus the risky allows the profile reports.
+public struct EnforceRecord: Codable, Sendable {
+    public var ts: Date
+    public var runId: String
+    public var pid: Int32
+    public var process: String
+    public var verdict: Verdict
+    public var operation: String
+    public var target: String
+    public var category: String
+    public var count: Int
+
+    static func category(for event: SandboxEvent) -> String {
+        if event.verdict == .deny { return "denied" }
+        if event.operation.hasPrefix("network-") { return ReportCategory.network.rawValue }
+        if event.operation.hasPrefix("process-exec") { return ReportCategory.exec.rawValue }
+        if event.operation.hasPrefix("file-write") { return ReportCategory.writeOutside.rawValue }
+        return "allowed"
+    }
+}
+
+/// Raw learn-mode capture, used to (re)generate configs.
+func readCapture(_ url: URL) throws -> [SandboxEvent] {
+    let decoder = JSONDecoder()
+    return try String(contentsOf: url, encoding: .utf8)
+        .split(separator: "\n")
+        .compactMap { try? decoder.decode(SandboxEvent.self, from: Data($0.utf8)) }
+}

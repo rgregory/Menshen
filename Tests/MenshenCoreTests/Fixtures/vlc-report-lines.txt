@@ -1,0 +1,214 @@
+Sandbox: VLC(81047) allow file-read-data /System/Volumes/Preboot/Cryptexes/Rosetta
+Sandbox: VLC(81047) allow file-read-metadata /Applications/VLC.app/Contents/MacOS/VLC
+Sandbox: VLC(81047) allow file-read-data /Applications/VLC.app/Contents/MacOS/VLC
+Sandbox: VLC(81047) allow file-read-metadata /Applications/VLC.app/Contents/MacOS/VLC
+Sandbox: VLC(81047) allow file-read-metadata /Applications/VLC.app/Contents/Frameworks/Breakpad.framework/Versions/A/Breakpad
+Sandbox: VLC(81047) allow file-read-data /Applications/VLC.app/Contents/Frameworks/Breakpad.framework/Versions/A/Breakpad
+Sandbox: VLC(81047) allow file-read-metadata /Applications/VLC.app/Contents/MacOS/lib/libvlc.dylib
+Sandbox: VLC(81047) allow file-read-metadata /Applications/VLC.app/Contents/MacOS/lib/libvlc.5.dylib
+Sandbox: VLC(81047) allow file-read-metadata /Applications/VLC.app/Contents/MacOS/lib/libvlc.dylib
+Sandbox: VLC(81047) allow file-read-metadata /Applications/VLC.app/Contents/MacOS/lib/libvlc.5.dylib
+Sandbox: VLC(81047) allow file-read-metadata /Applications/VLC.app/Contents/MacOS/lib/libvlc.dylib
+Sandbox: VLC(81047) allow file-read-data /Applications/VLC.app/Contents/MacOS/lib/libvlc.5.dylib
+Sandbox: VLC(81047) allow file-read-metadata /Applications/VLC.app/Contents/MacOS/lib/libvlccore.dylib
+Sandbox: VLC(81047) allow file-read-metadata /Applications/VLC.app/Contents/MacOS/lib/libvlccore.9.dylib
+Sandbox: VLC(81047) allow file-read-metadata /Applications/VLC.app/Contents/MacOS/lib/libvlccore.dylib
+Sandbox: VLC(81047) allow file-read-metadata /Applications/VLC.app/Contents/MacOS/lib/libvlccore.9.dylib
+Sandbox: VLC(81047) allow file-read-metadata /Applications/VLC.app/Contents/MacOS/lib/libvlccore.dylib
+Sandbox: VLC(81047) allow file-read-data /Applications/VLC.app/Contents/MacOS/lib/libvlccore.9.dylib
+Sandbox: VLC(81047) allow file-read-metadata /Applications/VLC.app/Contents/Frameworks/Breakpad.framework/Resources
+Sandbox: VLC(81047) allow file-read-metadata /Applications/VLC.app/Contents/Frameworks/Breakpad.framework/Versions/Current
+Sandbox: VLC(81047) allow file-read-metadata /Applications/VLC.app/Contents/Frameworks/Breakpad.framework/Versions/A/Resources/breakpadUtilities.dylib
+Sandbox: VLC(81047) allow file-read-metadata /Applications/VLC.app/Contents/Frameworks/Breakpad.framework/Resources
+Sandbox: VLC(81047) allow file-read-metadata /Applications/VLC.app/Contents/Frameworks/Breakpad.framework/Versions/Current
+Sandbox: VLC(81047) allow file-read-metadata /Applications/VLC.app/Contents/Frameworks/Breakpad.framework/Versions/A/Resources/breakpadUtilities.dylib
+Sandbox: VLC(81047) allow file-read-metadata /Applications/VLC.app/Contents/Frameworks/Breakpad.framework/Resources
+Sandbox: VLC(81047) allow file-read-metadata /Applications/VLC.app/Contents/Frameworks/Breakpad.framework/Versions/Current
+Sandbox: VLC(81047) allow file-read-data /Applications/VLC.app/Contents/Frameworks/Breakpad.framework/Versions/A/Resources/breakpadUtilities.dylib
+Sandbox: VLC(81047) allow file-read-data /dev/dtracehelper
+Sandbox: VLC(81047) allow file-write-data /dev/dtracehelper
+Sandbox: VLC(81047) allow file-ioctl path:/dev/dtracehelper ioctl-command:(_IO "h" 4)
+Sandbox: VLC(81047) allow sysctl-read kern.osproductversion
+Sandbox: VLC(81047) allow sysctl-read kern.iossupportversion
+Sandbox: VLC(81047) allow sysctl-read kern.osproductversion
+Sandbox: VLC(81047) allow file-read-data /Applications/VLC.app/Contents/MacOS/VLC
+Sandbox: VLC(81047) allow file-read-data /Applications/VLC.app
+Sandbox: VLC(81047) allow file-read-metadata /Applications/VLC.app
+Sandbox: VLC(81047) allow file-read-metadata /System/Volumes/Data
+Sandbox: VLC(81047) allow file-read-data /Applications/VLC.app/Contents/Info.plist
+Sandbox: VLC(81047) allow file-read-data /Applications/VLC.app/Contents/MacOS/VLC
+Sandbox: VLC(81047) allow sysctl-read kern.osvariant_status
+Sandbox: VLC(81047) allow mach-lookup com.apple.system.notification_center
+Sandbox: VLC(81047) allow ipc-posix-shm-read-data apple.shm.notification_center
+Sandbox: VLC(81047) allow mach-lookup com.apple.system.opendirectoryd.libinfo
+Sandbox: VLC(81047) allow file-read-data /Applications/VLC.app/Contents/MacOS/VLC
+Sandbox: VLC(81047) allow file-read-data /Applications/VLC.app
+Sandbox: VLC(81047) allow file-read-metadata /Applications/VLC.app
+Sandbox: VLC(81047) allow file-read-metadata /System/Volumes/Data
+Sandbox: VLC(81047) allow file-read-data /Applications/VLC.app/Contents/Info.plist
+Sandbox: VLC(81047) allow file-read-data /Applications/VLC.app/Contents/MacOS/VLC
+Sandbox: VLC(81047) allow mach-lookup com.apple.logd
+Sandbox: VLC(81047) allow file-read-data /Library/Preferences/Logging/com.apple.diagnosticd.filter.plist
+Sandbox: VLC(81047) allow mach-lookup com.apple.diagnosticd
+Sandbox: VLC(81047) allow file-read-data /private/var/db/timezone/tz/2026c.1.0/zoneinfo/America/New_York
+Sandbox: VLC(81047) allow file-read-data /private/var/db/timezone/tz/2026c.1.0/zoneinfo/posixrules
+Sandbox: VLC(81047) allow file-read-data /Applications/VLC.app
+Sandbox: VLC(81047) allow system-info vfs.disk-space
+Sandbox: VLC(81047) allow file-read-data /Applications/VLC.app/Contents
+Sandbox: VLC(81047) allow system-info vfs.disk-space
+Sandbox: VLC(81047) allow file-read-data /Applications/VLC.app/Contents/Info.plist
+Sandbox: VLC(81047) allow file-read-data /Applications/VLC.app/Contents/MacOS/VLC
+Sandbox: VLC(81047) allow file-read-data /Library/Preferences/Logging/com.apple.diagnosticd.filter.plist
+Sandbox: VLC(81047) allow mach-lookup com.apple.cfprefsd.daemon
+Sandbox: VLC(81047) allow mach-lookup com.apple.cfprefsd.agent
+Sandbox: VLC(81047) allow ipc-posix-shm-read-data apple.cfprefs.daemonv1
+Sandbox: VLC(81047) allow ipc-posix-shm-read-data apple.cfprefs.501v1
+Sandbox: VLC(81047) allow file-read-data /Applications/VLC.app/Contents/Frameworks/Breakpad.framework/Versions/A/Resources/crash_report_sender.app
+Sandbox: VLC(81047) allow system-info vfs.disk-space
+Sandbox: VLC(81047) allow file-read-data /Applications/VLC.app/Contents/Frameworks/Breakpad.framework/Versions/A/Resources/crash_report_sender.app/Contents
+Sandbox: VLC(81047) allow system-info vfs.disk-space
+Sandbox: VLC(81047) allow sysctl-read hw.pagesize_compat
+Sandbox: VLC(81047) allow system-info vfs.disk-space
+Sandbox: VLC(81047) allow mach-lookup com.apple.distributed_notifications@Uv3
+Sandbox: VLC(81047) allow system-info vfs.disk-space
+Sandbox: VLC(81047) allow system-info vfs.disk-space
+Sandbox: VLC(81047) allow system-info vfs.disk-space
+Sandbox: VLC(81047) allow system-info vfs.disk-space
+Sandbox: VLC(81047) allow system-info vfs.disk-space
+Sandbox: VLC(81047) allow system-info vfs.disk-space
+Sandbox: VLC(81047) allow system-info vfs.disk-space
+Sandbox: VLC(81047) allow mach-lookup com.apple.cmio.registerassistantservice.system-extensions
+Sandbox: VLC(81047) allow mach-lookup com.apple.tccd
+Sandbox: VLC(81047) allow mach-lookup com.apple.audio.audiohald
+Sandbox: VLC(81047) allow system-info vfs.disk-space
+Sandbox: VLC(81047) allow system-info vfs.disk-space
+Sandbox: VLC(81047) allow mach-lookup com.apple.pasteboard.1
+Sandbox: VLC(81047) allow mach-lookup com.apple.tccd.system
+Sandbox: VLC(81047) allow mach-lookup com.apple.windowserver.active
+Sandbox: VLC(81047) allow sysctl-read kern.willshutdown
+Sandbox: VLC(81047) allow mach-lookup com.apple.coreservices.launchservicesd
+Sandbox: VLC(81047) allow mach-lookup com.apple.analyticsd
+Sandbox: VLC(81047) allow sysctl-read kern.willshutdown
+Sandbox: VLC(81047) allow sysctl-read kern.willshutdown
+Sandbox: VLC(81047) allow mach-lookup com.apple.CARenderServer
+Sandbox: VLC(81047) allow system-info vfs.disk-space
+Sandbox: VLC(81047) allow system-info vfs.disk-space
+Sandbox: VLC(81047) allow system-info vfs.disk-space
+Sandbox: VLC(81047) allow system-info vfs.disk-space
+Sandbox: VLC(81047) allow system-info vfs.disk-space
+Sandbox: VLC(81047) allow system-info vfs.disk-space
+Sandbox: VLC(81047) allow system-info vfs.disk-space
+Sandbox: VLC(81047) allow system-info vfs.disk-space
+Sandbox: VLC(81047) allow sysctl-read kern.willshutdown
+Sandbox: VLC(81047) allow file-issue-extension target:/Applications/VLC.app extension-class:com.apple.app-sandbox.read
+Sandbox: VLC(81047) allow sysctl-read kern.willshutdown
+Sandbox: VLC(81047) allow mach-lookup com.apple.lsd.modifydb
+Sandbox: VLC(81047) allow sysctl-read kern.willshutdown
+Sandbox: VLC(81047) allow sysctl-read kern.osproductversion
+Sandbox: VLC(81047) allow sysctl-read kern.willshutdown
+Sandbox: VLC(81047) allow sysctl-read kern.willshutdown
+Sandbox: VLC(81047) allow sysctl-read kern.willshutdown
+Sandbox: VLC(81047) allow system-info vfs.disk-space
+Sandbox: VLC(81047) allow system-info vfs.disk-space
+Sandbox: VLC(81047) allow system-info vfs.disk-space
+Sandbox: VLC(81047) allow sysctl-read kern.willshutdown
+Sandbox: VLC(81047) allow mach-lookup com.apple.CoreServices.coreservicesd
+Sandbox: VLC(81047) allow mach-lookup com.apple.lsd.mapdb
+Sandbox: VLC(81047) allow file-read-xattr path:/System/Library/CoreServices/CoreTypes.bundle/Contents/Resources/Exceptions.plist xattr:com.apple.decmpfs
+Sandbox: VLC(81047) allow file-read-xattr path:/System/Library/CoreServices/CoreTypes.bundle/Contents/Resources/Exceptions.plist xattr:com.apple.ResourceFork
+Sandbox: VLC(81047) allow file-read-xattr path:/System/Library/CoreServices/CoreTypes.bundle/Contents/Library/AppExceptions.bundle/Exceptions.plist xattr:com.apple.decmpfs
+Sandbox: VLC(81047) allow file-read-xattr path:/System/Library/CoreServices/CoreTypes.bundle/Contents/Library/AppExceptions.bundle/Exceptions.plist xattr:com.apple.ResourceFork
+Sandbox: VLC(81047) allow sysctl-read hw.cpufamily
+Sandbox: VLC(81047) allow mach-lookup com.apple.runningboard
+Sandbox: VLC(81047) allow mach-lookup com.apple.dock.server
+Sandbox: VLC(81047) allow sysctl-read kern.willshutdown
+Sandbox: VLC(81047) allow mach-lookup com.apple.tccd
+Sandbox: VLC(81047) allow mach-lookup com.apple.linkd.autoShortcut
+Sandbox: VLC(81047) allow mach-lookup com.apple.mediaremoted.xpc
+Sandbox: VLC(81047) allow mach-lookup com.apple.logd.events
+Sandbox: VLC(81047) allow sysctl-read hw.cputype
+Sandbox: VLC(81047) allow sysctl-read kern.grade_cputype
+Sandbox: VLC(81047) allow sysctl-write kern.grade_cputype
+Sandbox: VLC(81047) allow iokit-open-user-client IOSurfaceRootUserClient
+Sandbox: VLC(81047) allow sysctl-read kern.maxfilesperproc
+Sandbox: VLC(81047) allow sysctl-read hw.logicalcpu_max
+Sandbox: VLC(81047) allow sysctl-read hw.physicalcpu_max
+Sandbox: VLC(81047) allow mach-task-name others [WindowManager(61635)]
+Sandbox: VLC(81047) allow sysctl-read kern.willshutdown
+Sandbox: VLC(81047) allow file-write-data /dev/dtracehelper
+Sandbox: VLC(81047) allow file-ioctl path:/dev/dtracehelper ioctl-command:(_IO "h" 4)
+Sandbox: VLC(81047) allow sysctl-read kern.bootargs
+Sandbox: VLC(81047) allow iokit-open-user-client AGXDeviceUserClient
+Sandbox: VLC(81047) allow file-read-xattr path:/System/Library/Extensions/AGXMetalG17G.bundle/Contents/Resources/ds.binary.metallib.g17g-a0 xattr:com.apple.decmpfs
+Sandbox: VLC(81047) allow file-read-xattr path:/System/Library/Extensions/AGXMetalG17G.bundle/Contents/Resources/ds.binary.metallib.g17g-a0 xattr:com.apple.ResourceFork
+Sandbox: VLC(81047) allow mach-task-name others [MenuBarAgent(61620)]
+Sandbox: VLC(81047) allow file-write-data /dev/dtracehelper
+Sandbox: VLC(81047) allow file-ioctl path:/dev/dtracehelper ioctl-command:(_IO "h" 4)
+Sandbox: VLC(81047) allow mach-register com.apple.coredrag (per-pid)
+Sandbox: VLC(81047) allow iokit-open-user-client IOHIDParamUserClient
+Sandbox: VLC(81047) allow mach-register com.apple.axserver (per-pid)
+Sandbox: VLC(81047) allow user-preference-read com.apple.hitoolbox
+Sandbox: VLC(81047) allow file-write-data /dev/dtracehelper
+Sandbox: VLC(81047) allow file-ioctl path:/dev/dtracehelper ioctl-command:(_IO "h" 4)
+Sandbox: VLC(81047) allow mach-register com.apple.tsm.portname (per-pid)
+Sandbox: VLC(81047) allow user-preference-read com.apple.hitoolbox
+Sandbox: VLC(81047) allow iokit-open-user-client RootDomainUserClient
+Sandbox: VLC(81047) allow file-read-xattr path:/Applications/VLC.app/Contents/MacOS/VLC xattr:com.apple.root.installed
+Sandbox: VLC(81047) allow file-write-create /private/var/folders/8m/phcq795j3pl_bd2znsk4p9mh0000gn/T/TemporaryItems/NSIRD_VLC_6QuypO
+Sandbox: VLC(81047) allow system-fsctl (_IO "h" 47)
+Sandbox: VLC(81047) allow file-write-create /private/var/folders/8m/phcq795j3pl_bd2znsk4p9mh0000gn/T/TemporaryItems/NSIRD_VLC_6QuypO/permission_test
+Sandbox: VLC(81047) allow file-read-xattr path:/private/var/folders/8m/phcq795j3pl_bd2znsk4p9mh0000gn/T/TemporaryItems/NSIRD_VLC_6QuypO/permission_test xattr:com.apple.provenance
+Sandbox: VLC(81047) allow file-read-xattr path:/private/var/folders/8m/phcq795j3pl_bd2znsk4p9mh0000gn/T/TemporaryItems/NSIRD_VLC_6QuypO/permission_test xattr:com.apple.provenance
+Sandbox: VLC(81047) allow file-read-xattr path:/Applications/VLC.app xattr:com.apple.macl
+Sandbox: VLC(81047) allow file-read-xattr path:/Applications/VLC.app xattr:com.apple.provenance
+Sandbox: VLC(81047) allow file-read-xattr path:/Applications/VLC.app xattr:com.apple.quarantine
+Sandbox: VLC(81047) allow file-read-xattr path:/Applications/VLC.app xattr:com.apple.quarantine
+Sandbox: VLC(81047) allow file-read-xattr path:/private/var/folders/8m/phcq795j3pl_bd2znsk4p9mh0000gn/T/TemporaryItems/NSIRD_VLC_6QuypO/permission_test xattr:com.apple.provenance
+Sandbox: VLC(81047) allow file-read-xattr path:/private/var/folders/8m/phcq795j3pl_bd2znsk4p9mh0000gn/T/TemporaryItems/NSIRD_VLC_6QuypO/permission_test xattr:com.apple.provenance
+Sandbox: VLC(81047) allow file-write-owner /private/var/folders/8m/phcq795j3pl_bd2znsk4p9mh0000gn/T/TemporaryItems/NSIRD_VLC_6QuypO/permission_test
+Sandbox: VLC(81047) allow file-read-xattr path:/private/var/folders/8m/phcq795j3pl_bd2znsk4p9mh0000gn/T/TemporaryItems/NSIRD_VLC_6QuypO xattr:com.apple.macl
+Sandbox: VLC(81047) allow file-read-xattr path:/private/var/folders/8m/phcq795j3pl_bd2znsk4p9mh0000gn/T/TemporaryItems/NSIRD_VLC_6QuypO xattr:com.apple.macl
+Sandbox: VLC(81047) allow file-read-xattr path:/private/var/folders/8m/phcq795j3pl_bd2znsk4p9mh0000gn/T/TemporaryItems/NSIRD_VLC_6QuypO xattr:com.apple.provenance
+Sandbox: VLC(81047) allow file-read-xattr path:/private/var/folders/8m/phcq795j3pl_bd2znsk4p9mh0000gn/T/TemporaryItems/NSIRD_VLC_6QuypO xattr:com.apple.provenance
+Sandbox: VLC(81047) allow file-write-unlink /private/var/folders/8m/phcq795j3pl_bd2znsk4p9mh0000gn/T/TemporaryItems/NSIRD_VLC_6QuypO/permission_test
+Sandbox: VLC(81047) allow file-write-unlink /private/var/folders/8m/phcq795j3pl_bd2znsk4p9mh0000gn/T/TemporaryItems/NSIRD_VLC_6QuypO
+Sandbox: VLC(81047) allow file-read-xattr path:/Applications/VLC.app/Contents/MacOS/VLC xattr:com.apple.root.installed
+Sandbox: VLC(81047) allow file-read-xattr path:/Users/USER/Library/HTTPStorages/org.videolan.vlc xattr:com.apple.metadata:com_apple_backup_excludeItem
+Sandbox: VLC(81047) allow file-write-data /Users/USER/Library/HTTPStorages/org.videolan.vlc/httpstorages.sqlite
+Sandbox: VLC(81047) allow file-write-xattr path:/Users/USER/Library/HTTPStorages/org.videolan.vlc/httpstorages.sqlite xattr:com.apple.runningboard.can-suspend-locked
+Sandbox: VLC(81047) allow file-write-data /Users/USER/Library/HTTPStorages/org.videolan.vlc/httpstorages.sqlite-wal
+Sandbox: VLC(81047) allow file-write-data /Users/USER/Library/HTTPStorages/org.videolan.vlc/httpstorages.sqlite-shm
+Sandbox: VLC(81047) allow file-write-data /dev/dtracehelper
+Sandbox: VLC(81047) allow file-ioctl path:/dev/dtracehelper ioctl-command:(_IO "h" 4)
+Sandbox: VLC(81047) allow file-read-xattr path:/Applications/VLC.app/Contents/MacOS/VLC xattr:com.apple.root.installed
+Sandbox: VLC(81047) allow file-read-xattr path:/Applications/VLC.app/Contents/MacOS/VLC xattr:com.apple.root.installed
+Sandbox: VLC(81047) allow file-issue-extension target:/Applications/VLC.app extension-class:com.apple.app-sandbox.read
+Sandbox: VLC(81047) allow file-issue-extension target:/Applications/VLC.app extension-class:com.apple.app-sandbox.read
+Sandbox: VLC(81047) allow file-read-xattr path:/Applications/VLC.app/Contents/MacOS/VLC xattr:com.apple.root.installed
+Sandbox: VLC(81047) allow file-issue-extension target:/Applications/VLC.app extension-class:com.apple.app-sandbox.read
+Sandbox: VLC(81047) allow file-issue-extension target:/Applications/VLC.app extension-class:com.apple.app-sandbox.read
+Sandbox: VLC(81047) allow network-outbound remote:*:443
+Sandbox: VLC(81047) allow file-write-create /private/var/folders/8m/phcq795j3pl_bd2znsk4p9mh0000gn/T/vlc-arm64.xml
+Sandbox: VLC(81047) allow file-read-xattr path:/private/var/folders/8m/phcq795j3pl_bd2znsk4p9mh0000gn/T/vlc-arm64.xml xattr:com.apple.ResourceFork
+Sandbox: VLC(81047) allow file-write* /private/var/folders/8m/phcq795j3pl_bd2znsk4p9mh0000gn/T/vlc-arm64.xml
+Sandbox: VLC(81047) allow file-write-unlink /private/var/folders/8m/phcq795j3pl_bd2znsk4p9mh0000gn/T/vlc-arm64.xml
+317 duplicate reports for Sandbox: Messages(45083) deny(1) syscall-unix 186
+1 duplicate report for Sandbox: Messages(45083) deny(1) syscall-unix 186
+4 duplicate reports for Sandbox: spotlightknowledged.importer(62349) deny(1) mach-lookup com.apple.diagnosticd
+1 duplicate report for Sandbox: mediaanalysisd(61717) deny(1) system-info vfs.disk-space
+19 duplicate reports for Sandbox: Messages(45083) deny(1) syscall-unix 186
+21 duplicate reports for Sandbox: Messages(45083) deny(1) syscall-unix 186
+17 duplicate reports for Sandbox: spotlightknowledged.importer(62349) deny(1) mach-lookup com.apple.diagnosticd
+35 duplicate reports for Sandbox: Messages(45083) deny(1) syscall-unix 186
+2 duplicate reports for Sandbox: coreduetd(370) deny(1) system-info vfs.disk-space
+33 duplicate reports for Sandbox: Messages(45083) deny(1) syscall-unix 186
+Sandbox: spotlightknowledged.importer(62349) deny(1) mach-lookup com.apple.diagnosticd
+Sandbox: Messages(45083) deny(1) syscall-unix 186
+Sandbox: spotlightknowledged.importer(62349) deny(1) mach-lookup com.apple.diagnosticd
+Sandbox: Messages(45083) deny(1) syscall-unix 186
+Sandbox: Messages(45083) deny(1) syscall-unix 186
+Sandbox: spotlightknowledged.importer(62349) deny(1) mach-lookup com.apple.diagnosticd
+Sandbox: Messages(45083) deny(1) syscall-unix 186
+Sandbox: Messages(45083) deny(1) syscall-unix 186
+Sandbox: Messages(45083) deny(1) syscall-unix 186
+Sandbox: spotlightknowledged.importer(62349) deny(1) mach-lookup com.apple.diagnosticd
