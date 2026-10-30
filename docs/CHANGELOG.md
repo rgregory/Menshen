@@ -23,6 +23,19 @@ All notable changes are documented here.
   - `AccessSummary` / `RuleText` / `BlockedSummary` (plain-language summaries)
 - Tests: 44 in total. They cover swap round trip, refusals, rollback (mutation-checked), never deleting a foreign bundle, the end-to-end launcher via LaunchServices with a dummy app, `Library`, and the summaries.
 
+### Added: templates, limits and the sanity set
+- **Templates** (`menshen template`, Config switches, a Restrictions card on the Dashboard): offline, temp-only, no-launch, background. They compile after learned and your rules, so they win, and they're kept on re-learn. The dashboard summary reflects them.
+- **Hard limits:** CPU seconds (`ulimit -t`, outside the sandbox) and memory MiB (`taskpolicy -m`, applied *inside* the sandbox, since it doesn't survive sandbox-exec). Kernel-tested.
+- **Sanity set** added to hardening: secrets by name anywhere in home (regex under the home folder), more credential stores, chat-app sessions, personal data. Older configs get every current protection at compile time.
+- **Fixed before it shipped:** blanket template denies without a filter would have lost to learned allows. Seatbelt treats a filter-less rule as the operation's default. They now carry `(subpath "/")`.
+
+### Added: live activity dashboard
+- The Dashboard shows live activity while an app runs: network, disk by folder, launches, services, devices and blocked attempts, plus a recent feed. For replaced apps opened from the Dock it follows the launcher's log; otherwise it shows the last run.
+- New `logging.activity` (default on; older configs load with it on) reports reads outside system files, own-folder writes, local sockets, services and devices. The specific switches (network, launches, outside writes) still decide their own categories.
+- Records now have finer categories: read, write, write-outside, network, exec, service, device, denied.
+- Sockets read plainly: "Write to the system log", "Look up host names (DNS)".
+- Removed `BlockedSummary`; the activity panel replaces the separate Blocked card.
+
 ### Added: category presets
 - `menshen allow <app> media | images | documents`, also a Category option in Add Permission.
   - Membership follows macOS's UTType classification and is stored as an auditable extension list.

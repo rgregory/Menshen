@@ -74,8 +74,10 @@ final class AppStore {
     var learnMerge = true
 
     // Dashboard: the most-blocked attempts from the newest enforce run
-    var lastBlocked: [BlockedSummary] = []
+    var lastRecords: [EnforceRecord] = []
     var lastEnforce: Date?
+    @ObservationIgnored private var followers: [String: LogFollower] = [:]
+    @ObservationIgnored private var watchTimer: Timer?
 
     // History tab
     var history: [SessionInfo] = []
@@ -103,6 +105,7 @@ final class AppStore {
 
     init() {
         refresh()
+        watchTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.watchReplacedApps() }
     }
 
     var items: [AppItem] {
@@ -119,7 +122,7 @@ final class AppStore {
             history = Library.sessions(key, environment)
             let newest = history.first { $0.kind == .enforce }
             lastEnforce = newest?.date
-            lastBlocked = newest.map { BlockedSummary.top(Library.records($0.url)) } ?? []
+            lastRecords = newest.map { Library.records($0.url) } ?? []
             if let entry = entries.first(where: { $0.id == key }), drafts[key] == nil {
                 drafts[key] = entry.config
             }
@@ -206,7 +209,38 @@ final class AppStore {
     }
 
     func stop(_ key: String) {
+        if sessions[key]?.external == true, let swap = entries.first(where: { $0.id == key })?.swap {
+            Swap.runningPIDs(inside: swap.hiddenPath).forEach { kill($0, SIGTERM) }
+            return
+        }
         sessions[key]?.stop.stop()
+    }
+
+    /// A replaced app opened from the Dock/Finder runs under its launcher, not under Menshen.
+    /// Notice it and follow the launcher's enforce log so the dashboard is live for it too.
+    private func watchReplacedApps() {
+        for entry in entries {
+            guard let swap = entry.swap else { continue }
+            let running = !Swap.runningPIDs(inside: swap.hiddenPath).isEmpty
+            let session = sessions[entry.id]
+            if running, session?.running != true {
+                let logs = Library.sessions(entry.id, environment).filter { $0.kind == .enforce }
+                guard let newest = logs.first, Date().timeIntervalSince(newest.date) < 120 else { continue }
+                let live = LiveSession(kind: .enforce, appName: entry.config.target.name)
+                live.external = true
+                live.startExternal()
+                sessions[entry.id] = live
+                followers[entry.id] = LogFollower(url: newest.url)
+            }
+            if let live = sessions[entry.id], live.external, live.running, let follower = followers[entry.id] {
+                live.addFollowed(follower.poll())
+                if !running {
+                    live.endExternal()
+                    followers[entry.id] = nil
+                    refresh()
+                }
+            }
+        }
     }
 
     private func sessionEnded(_ key: String) {
@@ -342,6 +376,22 @@ final class AppStore {
         } catch {
             message = "\(error)"
         }
+    }
+
+    func setTemplate(_ key: String, _ template: Template, on: Bool) {
+        guard var draft = drafts[key] else { return }
+        var set = Set(draft.templates ?? [])
+        if on { set.insert(template) } else { set.remove(template) }
+        draft.templates = set.isEmpty ? nil : Template.allCases.filter { set.contains($0) }
+        drafts[key] = draft
+    }
+
+    func setLimit(_ key: String, _ path: WritableKeyPath<ResourceLimits, Int?>, _ text: String) {
+        guard var draft = drafts[key] else { return }
+        var limits = draft.limits ?? ResourceLimits()
+        limits[keyPath: path] = Int(text.trimmingCharacters(in: .whitespaces)).flatMap { $0 > 0 ? $0 : nil }
+        draft.limits = limits.cpuSeconds == nil && limits.memoryMB == nil ? nil : limits
+        drafts[key] = draft
     }
 
     func removeCustom(_ key: String, ruleID: String) {

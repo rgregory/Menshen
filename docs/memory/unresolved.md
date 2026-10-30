@@ -13,6 +13,8 @@ Open questions, deferred items, and known unknowns.
 | 2026-10-30 | Launchers keep an old copy of Menshen | A launcher embeds the menshen-launch build from the day the app was replaced. After a Menshen update, refresh it with Restore and then Replace. A one-step "refresh launcher" would be nicer. |
 | 2026-10-30 | Your rules and the Open panel | A file-type rule lets the app read matching files, but a non-sandboxed app's Open panel may still be unable to *list* folders it has no rule for. Opening files from Finder or by drag and drop works. Not yet tested in VLC. |
 | 2026-10-30 | App icon license | The archway image (Pinterest) has an unknown designer and license. Replace it or get permission before distributing. |
+| 2026-10-30 | CPU percentage cap | Not offered: macOS has no "max N% CPU" control. It would need a pause/resume watchdog (as App Tamer does). Background priority and a hard CPU-time budget are offered instead. |
+| 2026-10-30 | Private temp for Mac apps | Temp-only gives command-line tools a private TMPDIR, but NSTemporaryDirectory ignores TMPDIR, so Mac apps use the shared per-user temp folder. |
 | 2026-10-29 | GUI: added-but-unlearned apps aren't remembered | They live in memory only; relaunching Menshen drops them. Persist a small list if this becomes annoying. |
 | 2026-10-29 | GUI visual checks | Claude has no Screen Recording permission, so it can't screenshot Menshen; the user checks visually. |
 | 2026-10-29 | Project folder rename | The user renamed `projects/striply` → `projects/menshen` mid-session. Claude memory was moved to the new project key. |

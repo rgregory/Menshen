@@ -5,6 +5,7 @@ import Foundation
 public struct SessionControl: Sendable {
     public var forwardSignals: Bool
     public var stop: StopHandle?
+    public var launch = LaunchOptions()
 
     public init(forwardSignals: Bool = false, stop: StopHandle? = nil) {
         self.forwardSignals = forwardSignals
@@ -46,6 +47,7 @@ public enum Session {
             duration: duration,
             forwardSignals: control.forwardSignals,
             stop: control.stop,
+            launch: control.launch,
             onLaunch: { collector.attach(ProcessTree(root: $0)) },
             tick: { collector.refresh() }
         )

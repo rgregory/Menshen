@@ -10,6 +10,7 @@ let usage = """
       menshen show    <App.app | binary | config.json> [--config PATH]
       menshen allow   <App.app | config.json> [--write] CATEGORY… | TYPES… | FOLDER…   e.g. allow VLC.app media
       menshen allow   <App.app | config.json> --remove RULE-ID
+      menshen template <App.app | config.json> [offline temp-only no-launch background] [--cpu-seconds N] [--memory-mb N] [--none]
       menshen replace <App.app>       swap the app for a launcher that always runs it under enforce
       menshen restore <App.app | bundle-id>
       menshen swaps                   list replaced apps
@@ -23,6 +24,10 @@ let usage = """
     allow    Add a broad permission of your own: a category as macOS sections file types
              (media, images, documents), some types (mp4 mkv), or a folder (~/Movies).
              Read only unless --write. Protected locations stay blocked.
+    template One-click restrictions on top of what was learned: offline (no network),
+             temp-only (writes only to temp folders), no-launch (no other programs),
+             background (low CPU priority, throttled disk). Plus hard limits on CPU time
+             and memory. With no names, shows the current ones.
     replace  Rename the app to a hidden .Name.menshen.app (untouched) and put a launcher with
              its name and icon in its place, so Dock/Finder/Spotlight run it under enforce.
     restore  Remove the launcher and put the original back.
@@ -46,6 +51,9 @@ struct Parsed {
     var extra: [String] = []
     var write = false
     var remove: String?
+    var none = false
+    var cpuSeconds: Int?
+    var memoryMB: Int?
 }
 
 func parseDuration(_ text: String) throws -> TimeInterval {
@@ -74,12 +82,16 @@ func parse(_ argv: [String]) throws -> Parsed {
         case "--merge": p.merge = true
         case "--allow-changed": p.allowChanged = true
         case "--write": p.write = true
+        case "--none": p.none = true
+        case "--cpu-seconds", "--memory-mb":
+            guard let v = args.popFirst(), let n = Int(v), n > 0 else { throw MenshenError.usage("\(arg) needs a positive number") }
+            if arg == "--cpu-seconds" { p.cpuSeconds = n } else { p.memoryMB = n }
         case "--remove":
             guard let v = args.popFirst() else { throw MenshenError.usage("--remove needs a rule ID") }
             p.remove = v
         default:
             if arg.hasPrefix("--") { throw MenshenError.usage("unknown option \(arg)") }
-            if p.target != nil, p.command == "allow" {
+            if p.target != nil, p.command == "allow" || p.command == "template" {
                 p.extra.append(arg)
                 continue
             }
@@ -167,6 +179,44 @@ func runAllow(_ p: Parsed, _ target: String) throws -> Int32 {
     return 0
 }
 
+func runTemplate(_ p: Parsed, _ target: String) throws -> Int32 {
+    var options = EnforceOptions(target: target)
+    options.configPath = p.config
+    let env = MenshenEnvironment.current()
+    let (url, stored) = try Enforce.locateConfig(options, environment: env)
+    var config = stored
+    if p.none {
+        config.templates = nil
+        config.limits = nil
+    } else if !p.extra.isEmpty || p.cpuSeconds != nil || p.memoryMB != nil {
+        if !p.extra.isEmpty {
+            config.templates = try p.extra.map { name in
+                guard let t = Template(rawValue: name.lowercased()) else {
+                    throw MenshenError.usage("unknown template \(name); use \(Template.allCases.map(\.rawValue).joined(separator: ", "))")
+                }
+                return t
+            }
+        }
+        if p.cpuSeconds != nil || p.memoryMB != nil {
+            var limits = config.limits ?? ResourceLimits()
+            if let n = p.cpuSeconds { limits.cpuSeconds = n }
+            if let n = p.memoryMB { limits.memoryMB = n }
+            config.limits = limits
+        }
+    } else {
+        let names = config.templates?.map(\.rawValue).joined(separator: ", ") ?? "none"
+        print("templates: \(names)")
+        if let l = config.limits { print("limits: cpu \(l.cpuSeconds.map { "\($0)s" } ?? "none"), memory \(l.memoryMB.map { "\($0) MiB" } ?? "none")") }
+        return 0
+    }
+    if let error = ProfileCompiler.validate(ProfileCompiler(environment: env).compile(config)) {
+        throw MenshenError.failed("the profile doesn\'t compile with these templates, nothing saved:\n\(error)")
+    }
+    try config.save(to: url)
+    say("templates: \(config.templates?.map(\.rawValue).joined(separator: ", ") ?? "none"). Saved \(url.path)")
+    return 0
+}
+
 func runReplace(_ target: String) throws -> Int32 {
     guard let stub = Swap.defaultStub() else {
         throw MenshenError.failed("can't find the menshen-launch stub next to this binary; build it with `swift build`")
@@ -217,6 +267,7 @@ do {
     case "enforce": status = try runEnforce(p, target)
     case "show": status = try runShow(p, target)
     case "allow": status = try runAllow(p, target)
+    case "template": status = try runTemplate(p, target)
     case "replace": status = try runReplace(target)
     case "restore": status = try runRestore(target)
     default: throw MenshenError.usage("unknown command \(p.command)\n\n\(usage)")

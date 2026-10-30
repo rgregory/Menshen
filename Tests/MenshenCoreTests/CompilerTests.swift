@@ -30,10 +30,10 @@ import Testing
         #expect(text.contains("(allow network-outbound (remote ip \"*:443\") (with report))"))
         #expect(text.contains("(allow process-exec* (literal \"/bin/sh\") (with report))"))
         #expect(text.contains("(subpath \"\(testHome)/Documents\") (with report))"))
-        #expect(text.contains("(allow file-read* (regex #\"\\.(mp4|MP4)$\"))"))
+        #expect(text.contains("(allow file-read* (regex #\"\\.(mp4|MP4)$\") (with report))"), "your rules show up as activity")
         #expect(!text.contains("~/"), "home paths are expanded at compile time")
         #expect(text.contains("(allow user-preference-read user-preference-write (preference-domain \"com.example.foo\"))"))
-        #expect(lines.contains("(allow mach-lookup (global-name-prefix \"com.apple.\"))"))
+        #expect(lines.contains("(allow mach-lookup (global-name-prefix \"com.apple.\") (with report))"))
     }
 
     /// Simple, auditable output: grouped statements, no per-rule comments, nothing redundant.

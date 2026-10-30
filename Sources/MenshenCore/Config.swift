@@ -36,6 +36,8 @@ public enum FilterKind: String, Codable, Sendable {
     case iokitUserClientClass = "iokit-user-client-class"
     /// Comma-separated file extensions ("mp4,mkv"), matched anywhere, in any letter case.
     case fileTypes = "file-types"
+    /// A regex on full paths under the home folder (secrets by name, e.g. .env files).
+    case homePattern = "home-pattern"
 }
 
 public struct Filter: Codable, Hashable, Sendable {
@@ -95,8 +97,21 @@ public struct LoggingSettings: Codable, Equatable, Sendable {
     public var network = true
     public var exec = true
     public var writeOutside = true
+    /// Also report everyday activity (file reads and writes outside system files, service
+    /// lookups, device access) so the dashboard can show what the app does, live.
+    public var activity = true
 
     public init() {}
+
+    /// Settings missing from older configs take their defaults.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        denials = try c.decodeIfPresent(Bool.self, forKey: .denials) ?? true
+        network = try c.decodeIfPresent(Bool.self, forKey: .network) ?? true
+        exec = try c.decodeIfPresent(Bool.self, forKey: .exec) ?? true
+        writeOutside = try c.decodeIfPresent(Bool.self, forKey: .writeOutside) ?? true
+        activity = try c.decodeIfPresent(Bool.self, forKey: .activity) ?? true
+    }
 
     func reports(_ category: ReportCategory) -> Bool {
         switch category {
@@ -129,6 +144,10 @@ public struct MenshenConfig: Codable, Equatable, Sendable {
     public var rules: [Rule]
     /// Built-in sensitive rules. Compiled last, so they win over broader learned allows.
     public var hardening: [Rule]
+    /// One-click restrictions on top of what was learned. Kept when the app is re-learned.
+    public var templates: [Template]? = nil
+    /// Hard resource limits applied at launch (not sandbox rules).
+    public var limits: ResourceLimits? = nil
 
     public static func load(_ url: URL) throws -> MenshenConfig {
         let decoder = JSONDecoder()
@@ -183,6 +202,8 @@ public struct MenshenConfig: Codable, Equatable, Sendable {
     /// Carries the user's edits (actions, logging toggles) from `previous` into a regenerated config.
     public mutating func keepEdits(from previous: MenshenConfig) {
         logging = previous.logging
+        templates = previous.templates
+        limits = previous.limits
         let actions = Dictionary((previous.rules + previous.hardening).map { ($0.id, $0.action) },
                                  uniquingKeysWith: { first, _ in first })
         for i in rules.indices { if let a = actions[rules[i].id] { rules[i].action = a } }
@@ -259,5 +280,44 @@ extension MenshenConfig {
         if let existing = rules.first(where: { $0.id == rule.id }) { return existing }
         rules.append(rule)
         return rule
+    }
+}
+
+// MARK: - Templates
+
+public enum Template: String, Codable, CaseIterable, Sendable {
+    case offline
+    case tempOnly = "temp-only"
+    case noLaunch = "no-launch"
+    case background
+
+    public var title: String {
+        switch self {
+        case .offline: return "Offline"
+        case .tempOnly: return "Temp-only writes"
+        case .noLaunch: return "No other programs"
+        case .background: return "Background priority"
+        }
+    }
+
+    public var explanation: String {
+        switch self {
+        case .offline: return "No internet or local-network connections, even if learned. Local sockets (logging, DNS) still work."
+        case .tempOnly: return "Writes only to temp folders, never your files, even if learned. Command-line tools get a private temp folder (TMPDIR); Mac apps use the shared system one."
+        case .noLaunch: return "Can't start other programs, only its own helpers."
+        case .background: return "Low CPU priority and throttled disk I/O, so it can't hog the Mac."
+        }
+    }
+}
+
+public struct ResourceLimits: Codable, Equatable, Sendable {
+    /// Total CPU time before the app is stopped (RLIMIT_CPU).
+    public var cpuSeconds: Int?
+    /// Memory ceiling in MiB; the app is killed above it (taskpolicy -m).
+    public var memoryMB: Int?
+
+    public init(cpuSeconds: Int? = nil, memoryMB: Int? = nil) {
+        self.cpuSeconds = cpuSeconds
+        self.memoryMB = memoryMB
     }
 }

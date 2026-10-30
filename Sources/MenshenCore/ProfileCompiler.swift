@@ -19,7 +19,8 @@ public struct ProfileCompiler {
     /// Compact SBPL: rules with the same action, operations and logging are merged into one
     /// statement, and learned rules already covered by an always-on rule are left out. The JSON
     /// config keeps every rule with its ID and counts; this file is only what the kernel needs.
-    public func compile(_ config: MenshenConfig, source: String? = nil) -> String {
+    public func compile(_ stored: MenshenConfig, source: String? = nil) -> String {
+        let config = withCurrentProtections(stored)
         let t = config.target
         var out = [
             ";; Menshen profile for \(t.name)\(t.bundleId.map { " (\($0))" } ?? "")\(source.map { ", from \($0)" } ?? ""). Edit the JSON, not this file.",
@@ -34,33 +35,79 @@ public struct ProfileCompiler {
         out.append("(allow file-read* file-map-executable \(own))")
         out.append("(allow process-exec* \(own)\(config.logging.exec ? " (with report)" : ""))")
         out.append("(allow signal (target same-sandbox))")
+        if config.limits?.memoryMB != nil {
+            // The memory limit is applied by taskpolicy inside the sandbox, right before the app.
+            out.append("(allow file-read* file-map-executable process-exec* (literal \"/usr/sbin/taskpolicy\"))")
+        }
         // launchd and cfprefsd check these in user space, so learning can't see them (ADR-004):
         // the app's own preferences, plus Apple system services and preferences.
         if let domain = t.bundleId {
             out.append("(allow user-preference-read user-preference-write (preference-domain \(quote(domain))))")
         }
-        out.append("(allow mach-lookup (global-name-prefix \"com.apple.\"))")
+        out.append("(allow mach-lookup (global-name-prefix \"com.apple.\")\(config.logging.activity ? " (with report)" : ""))")
         out.append(statement("allow", ["user-preference-read"], ["(preference-domain-prefix \"com.apple.\")",
                    "(preference-domain \"kCFPreferencesAnyApplication\")", "(preference-domain \"pbs\")"], report: false))
 
         let learned = config.rules.filter { $0.source != .custom && !coveredByAlwaysOn($0, config) }
         let yours = config.rules.filter { $0.source == .custom }
         for (title, rules) in [(";; --- learned", learned),
-                               (";; --- your rules (before hardening, so protected locations stay blocked)", yours),
-                               (";; --- hardening (last, so it wins)", config.hardening)] where !rules.isEmpty {
+                               (";; --- your rules (before hardening, so protected locations stay blocked)", yours)] where !rules.isEmpty {
             out.append("")
             out.append(title)
-            out += statements(rules, logging: config.logging)
+            out += statements(rules, logging: config.logging, config: config)
         }
+        out += templateSection(config, own: own)
+        out.append("")
+        out.append(";; --- hardening (last, so it wins)")
+        out += statements(config.hardening, logging: config.logging, config: config)
         out.append("(deny file-link)")
         out.append("")
         return out.joined(separator: "\n")
     }
 
+    /// Templates restrict what was learned, so they come after learned and your rules. Order
+    /// inside matters here: a blanket deny, then the narrow allow that survives it. The blanket
+    /// denies carry `(subpath "/")`: a deny with no filter only sets the operation's default and
+    /// loses to any filtered allow, whatever the order (tested).
+    func templateSection(_ config: MenshenConfig, own: String) -> [String] {
+        let templates = Set(config.templates ?? [])
+        guard !templates.subtracting([.background]).isEmpty else { return [] }
+        let names = Template.allCases.filter { templates.contains($0) && $0 != .background }.map(\.rawValue)
+        var out = ["", ";; --- templates: \(names.joined(separator: ", "))"]
+        if templates.contains(.offline) {
+            out.append("(deny network-outbound (remote ip))")
+            out.append("(deny network-bind network-inbound (local ip))")
+        }
+        if templates.contains(.tempOnly) {
+            out.append("(deny file-write* (subpath \"/\"))")
+            var places = [environment.privateTemp(config.target.key).path]
+            if let temp = environment.userTempRoot { places.append(temp) }
+            out.append(statement("allow", ["file-write*"], places.map { "(subpath \(quote($0)))" } + ["(subpath \"/dev\")"], report: false))
+        }
+        if templates.contains(.noLaunch) {
+            out.append("(deny process-exec* (subpath \"/\"))")
+            let taskpolicy = config.limits?.memoryMB != nil ? " (literal \"/usr/sbin/taskpolicy\")" : ""
+            out.append("(allow process-exec* \(own)\(taskpolicy)\(config.logging.exec ? " (with report)" : ""))")
+        }
+        return out
+    }
+
+    /// Every profile gets every current protection: ones added to Menshen after a config was
+    /// learned are appended (as deny), so nobody has to re-learn to pick them up.
+    func withCurrentProtections(_ config: MenshenConfig) -> MenshenConfig {
+        let have = Set(config.hardening.map(\.id))
+        let current = Hardening(environment: environment, ownAnchors: config.anchors.map(environment.expand)).rules(hits: [:])
+        let missing = current.filter { !have.contains($0.id) }
+        guard !missing.isEmpty else { return config }
+        var copy = config
+        copy.hardening += missing
+        return copy
+    }
+
     /// Merges rules into as few statements as possible without changing what they permit.
     /// Within a section, allows come first and denies after, so a rule you switched off wins
     /// over the section's allows.
-    func statements(_ rules: [Rule], logging: LoggingSettings) -> [String] {
+    func statements(_ rules: [Rule], logging: LoggingSettings, config: MenshenConfig? = nil) -> [String] {
         struct Key: Hashable {
             var action: RuleAction
             var operations: [String]
@@ -69,7 +116,8 @@ public struct ProfileCompiler {
         var keys: [Key] = []
         var filters: [Key: [String]] = [:]
         for rule in rules {
-            let report = rule.action == .allow && rule.category.map(logging.reports) == true
+            let report = rule.action == .allow && (rule.category.map(logging.reports) == true
+                || (logging.activity && config.map { watched(rule, $0) } == true))
             let key = Key(action: rule.action, operations: rule.operations, report: report)
             if filters[key] == nil { keys.append(key) }
             var list = filters[key, default: []]
@@ -89,6 +137,25 @@ public struct ProfileCompiler {
             }
         }
         return out
+    }
+
+    /// Activity worth showing on the live dashboard that no specific switch covers: file access
+    /// outside system files and the app itself, local sockets, services and devices. System-file reads would be thousands of
+    /// uninteresting lines, so they stay quiet.
+    func watched(_ rule: Rule, _ config: MenshenConfig) -> Bool {
+        // Network, launches and outside writes have their own logging switches; activity covers the rest.
+        if rule.category != nil { return false }
+        let ops = Set(rule.operations)
+        let interesting = ops.contains { op in
+            op.hasPrefix("file-read") || op.hasPrefix("file-write") || op == "file-map-executable"
+                || op.hasPrefix("network") || op == "process-exec*" || op == "mach-lookup" || op.hasPrefix("iokit")
+        }
+        guard interesting else { return false }
+        guard let value = rule.filter.value, rule.filter.kind == .subpath || rule.filter.kind == .literal else { return true }
+        let path = environment.expand(value)
+        if path == "/" || path.hasPrefix("/dev/") || path.isWithin(config.target.path) { return false }
+        let systemRead = Generalizer.systemReadRoots.contains { path.isWithin($0) } && !ops.contains("file-write*")
+        return !systemRead
     }
 
     /// `(allow ops filter)` on one line, or one filter per line when there are several.
@@ -135,6 +202,7 @@ public struct ProfileCompiler {
         case .local: return "(local ip \(quote(value)))"
         case .preferenceDomain: return "(preference-domain \(quote(value)))"
         case .iokitUserClientClass: return "(iokit-user-client-class \(quote(value)))"
+        case .homePattern: return "(require-all (subpath \(quote(environment.home))) (regex #\"\(raw)\"))"
         case .fileTypes: return "(regex #\"\\.(\(Self.caseInsensitive(raw)))$\")"
         }
     }

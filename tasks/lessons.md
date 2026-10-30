@@ -39,3 +39,9 @@
 **What happened:** `swift test` failed about half the time with "plugin for module 'TestingMacros' not found". A retry wrapper didn't help: within one invocation every retry failed. Comparing compiler flags showed the failing builds lacked `-plugin-path …/host/plugins/testing`. Adding that flag in `Package.swift` made 6 of 6 runs pass.
 
 **Rule:** When something is flaky, diff a passing run against a failing one before adding retries. Here the retry script was deleted once the cause was fixed.
+
+## 2026-10-30 · A profile that reads right can still be enforced differently
+
+**What happened:** The templates wrote `(deny file-write*)` *after* the learned allows, which looks correct if later rules win. The kernel still allowed the learned write. A deny with no filter is only the operation's default, and any filtered allow beats it. Reviewing the profile text would never have caught this; the kernel integration test did.
+
+**Rule:** Every restriction Menshen adds gets a kernel test that runs a real process and checks for EPERM, with a control showing the same action succeeds without the restriction.

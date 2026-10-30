@@ -64,14 +64,26 @@ public enum RuleText {
         }
     }
 
+    /// Names for well-known local sockets apps "connect" to.
+    public static func socketName(_ path: String) -> String? {
+        switch path {
+        case "/private/var/run/mDNSResponder", "/var/run/mDNSResponder": return "DNS lookups"
+        case "/private/var/run/syslog", "/var/run/syslog": return "the system log"
+        default: return nil
+        }
+    }
+
     public static func describe(_ rule: Rule) -> String {
         if let label = rule.label, let category = FileCategory(rawValue: label) {
             return "\(verb(rule.operations)) all \(category.noun)"
         }
         let object = object(rule.filter)
-        if rule.operations == ["network-outbound"], rule.filter.kind == .literal,
-           rule.filter.value == "/private/var/run/mDNSResponder" {
-            return "Look up host names (DNS)"
+        if rule.operations == ["network-outbound"], rule.filter.kind == .literal, let path = rule.filter.value {
+            switch socketName(path) {
+            case "DNS lookups": return "Look up host names (DNS)"
+            case "the system log": return "Write to the system log"
+            default: return "Talk to local socket \(path)"
+            }
         }
         return object.isEmpty ? verb(rule.operations) : "\(verb(rule.operations)) \(object)"
     }
@@ -92,6 +104,8 @@ public struct AccessSummary: Sendable {
     public var launches: [Item] = []
     public var services: [Item] = []
     public var sensitive: [Item] = []
+    /// Active templates and resource limits.
+    public var restrictions: [Item] = []
     /// Hardening rules that deny something (protected locations and behaviors).
     public var protectedCount = 0
 
@@ -186,27 +200,37 @@ public struct AccessSummary: Sendable {
             s.sensitive.append(Item(title: title, detail: detail, access: state, flagged: rule.flagged == true))
         }
         s.sensitive.sort { $0.flagged && !$1.flagged }
+        s.applyTemplates(config)
         return s
     }
-}
 
-/// The most frequent blocked attempts in an enforce log, for the dashboard.
-public struct BlockedSummary: Identifiable, Sendable {
-    public var id: String { operation + " " + target }
-    public var operation: String
-    public var target: String
-    public var count: Int
-    public var last: Date
-
-    public static func top(_ records: [EnforceRecord], limit: Int = 8) -> [BlockedSummary] {
-        var groups: [String: BlockedSummary] = [:]
-        for r in records where r.verdict == .deny {
-            let key = r.operation + " " + r.target
-            var g = groups[key] ?? BlockedSummary(operation: r.operation, target: r.target, count: 0, last: r.ts)
-            g.count += r.count
-            g.last = max(g.last, r.ts)
-            groups[key] = g
+    /// Templates override learned allows, so the summary must say what really applies.
+    mutating func applyTemplates(_ config: MenshenConfig) {
+        let templates = Set(config.templates ?? [])
+        if templates.contains(.offline) {
+            network = network.filter { $0.title.contains("DNS") || $0.title.contains("system log") || $0.title.contains("local socket") }
+            network.append(Item(title: "All internet and local-network connections", detail: "Offline template", access: "blocked"))
         }
-        return groups.values.sorted { ($0.count, $0.last) > ($1.count, $1.last) }.prefix(limit).map { $0 }
+        if templates.contains(.tempOnly) {
+            files = files.compactMap { item in
+                var item = item
+                if item.access == "write" { return nil }
+                if item.access == "read & write" { item.access = "read" }
+                return item
+            }
+            files.append(Item(title: "Writes", detail: "temp folders only (Temp-only template)", access: "write"))
+        }
+        if templates.contains(.noLaunch) {
+            launches = [Item(title: "Other programs", detail: "No other programs template", access: "blocked")]
+        }
+        for template in Template.allCases where templates.contains(template) {
+            restrictions.append(Item(title: template.title, detail: template.explanation, access: "on"))
+        }
+        if let seconds = config.limits?.cpuSeconds {
+            restrictions.append(Item(title: "CPU time limit", detail: "stopped after \(seconds) s of CPU time", access: "limit"))
+        }
+        if let mb = config.limits?.memoryMB {
+            restrictions.append(Item(title: "Memory limit", detail: "killed above \(mb) MiB", access: "limit"))
+        }
     }
 }

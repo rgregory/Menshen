@@ -30,6 +30,23 @@ public final class StopHandle: @unchecked Sendable {
     }
 }
 
+/// How to launch beyond the profile: resource wrappers and extra environment variables.
+public struct LaunchOptions: Sendable {
+    /// Commands that exec the next one, e.g. ["/usr/sbin/taskpolicy", "-c", "background"]. Every
+    /// wrapper execs in place, so the pid Menshen tracks stays the app's pid.
+    public var wrapper: [String] = []
+    /// Commands run inside the sandbox, right before the app. Needed for settings that don't
+    /// survive sandbox-exec (taskpolicy's memory limit).
+    public var inner: [String] = []
+    public var environment: [String: String] = [:]
+
+    public init(wrapper: [String] = [], inner: [String] = [], environment: [String: String] = [:]) {
+        self.wrapper = wrapper
+        self.inner = inner
+        self.environment = environment
+    }
+}
+
 /// Launches the target under a Seatbelt profile. All launching goes through here so the
 /// deprecated `sandbox-exec` can be swapped for another launcher later (ADR-001).
 public enum Runner {
@@ -53,12 +70,17 @@ public enum Runner {
         duration: TimeInterval?,
         forwardSignals: Bool = true,
         stop: StopHandle? = nil,
+        launch: LaunchOptions = LaunchOptions(),
         onLaunch: (pid_t) -> Void,
         tick: @escaping @Sendable () -> Void
     ) throws -> Outcome {
+        let argv = command(profile: profile, executable: executable, arguments: arguments, launch: launch)
         let child = Process()
-        child.executableURL = URL(fileURLWithPath: "/usr/bin/sandbox-exec")
-        child.arguments = ["-f", profile.path, executable] + arguments
+        child.executableURL = URL(fileURLWithPath: argv[0])
+        child.arguments = Array(argv.dropFirst())
+        if !launch.environment.isEmpty {
+            child.environment = ProcessInfo.processInfo.environment.merging(launch.environment) { $1 }
+        }
 
         let stopped = StopFlag()
         let queue = DispatchQueue(label: "menshen.runner")
@@ -101,6 +123,11 @@ public enum Runner {
             wasSignaled: child.terminationReason == .uncaughtSignal,
             stoppedByMenshen: stopped.value
         )
+    }
+
+    /// The full command line: outer wrappers, sandbox-exec, inner wrappers, then the app.
+    static func command(profile: URL, executable: String, arguments: [String], launch: LaunchOptions) -> [String] {
+        launch.wrapper + ["/usr/bin/sandbox-exec", "-f", profile.path] + launch.inner + [executable] + arguments
     }
 
     /// SIGTERM now, SIGKILL if the target is still alive 5 s later.

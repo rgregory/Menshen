@@ -30,6 +30,7 @@ struct ConfigView: View {
                 Button("Save") { store.save(key) }.disabled(!dirty).keyboardShortcut("s")
             }
             logging(key)
+            templates(key)
             Table(store.rules(key)) {
                 TableColumn("Allow") { rule in
                     Toggle("", isOn: Binding(get: { rule.action == .allow },
@@ -100,6 +101,26 @@ struct ConfigView: View {
             toggle(key, "Launches", \.exec)
             toggle(key, "Outside writes", \.writeOutside)
                 .help("Writes outside the app's own folders")
+        }
+    }
+
+    /// One-click restrictions and hard limits (saved with the config).
+    func templates(_ key: String) -> some View {
+        HStack(spacing: 14) {
+            Text("Templates:").foregroundStyle(.secondary)
+            ForEach(Template.allCases, id: \.self) { t in
+                Toggle(t.title, isOn: Binding(get: { store.drafts[key]?.templates?.contains(t) == true },
+                                              set: { store.setTemplate(key, t, on: $0) }))
+                    .help(t.explanation)
+            }
+            Divider().frame(height: 16)
+            Text("Limits:").foregroundStyle(.secondary)
+            TextField("CPU s", text: Binding(get: { store.drafts[key]?.limits?.cpuSeconds.map(String.init) ?? "" },
+                                             set: { store.setLimit(key, \.cpuSeconds, $0) }))
+                .frame(width: 60).help("Total CPU time before the app is stopped")
+            TextField("Mem MiB", text: Binding(get: { store.drafts[key]?.limits?.memoryMB.map(String.init) ?? "" },
+                                               set: { store.setLimit(key, \.memoryMB, $0) }))
+                .frame(width: 70).help("The app is killed above this much memory")
         }
     }
 

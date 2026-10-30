@@ -256,7 +256,7 @@ public enum Swap {
     }
 
     /// Processes whose executable lives inside `path` (i.e. the app is running).
-    static func runningPIDs(inside path: String) -> [pid_t] {
+    public static func runningPIDs(inside path: String) -> [pid_t] {
         let prefix = path.hasSuffix("/") ? path : path + "/"
         let capacity = Int(proc_listallpids(nil, 0)) + 64
         var pids = [pid_t](repeating: 0, count: capacity)

@@ -16,7 +16,7 @@ No root needed. Tested on macOS 27.0.1.
 open build/Menshen.app
 ```
 
-- **Dashboard:** a plain-language summary of what the selected app may access (files, network, launches, services and settings, sensitive locations), the most-blocked attempts from its last run, and live counters and blocked attempts while it runs.
+- **Dashboard:** a **live activity** panel while the app runs: network (by port and socket), disk (by folder, read or write), launches, services, devices and blocked attempts, plus a recent-events feed. It also works for replaced apps opened from the Dock, by following the launcher's log as it grows. When nothing is running, it shows the same for the last run. Below it is a plain-language summary of what the app *may* access.
 - **Session:** learn or enforce with a live event table, and Stop.
 - **History:** past learn captures and enforce logs, filterable (blocked, network, launches, outside writes) and searchable.
 - **Config:** every rule in plain words, with an Allow toggle, flagged rules marked, logging switches, Save (keeps a backup), and Show Profile (the compiled SBPL).
@@ -38,6 +38,26 @@ menshen allow /Applications/VLC.app --remove C-1a2b3c4d  # remove one of your ru
 **Categories** follow macOS's own file-type classification (UTType, what Finder's "Kind" uses), resolved when you add the rule and stored as a plain list in the config. **Media** is movies plus audio; **Images**; **Documents** is PDF, Office, iWork, OpenDocument, ePub and plain or rich text. Code, scripts and config files (json, yaml, sh…) are never "documents", and `.ts` (also TypeScript) and `.key` (also private keys) are left out of the presets.
 
 The same is in the app: Config → **Add Permission…** → Category, which shows the exact extensions before you add them. Your rules come after the learned rules but **before the protections**, so `~/.ssh/key.mp4` stays blocked. They survive re-learning.
+
+## Templates and limits
+
+One-click restrictions on top of what an app learned, in Config or with `menshen template`:
+
+```sh
+menshen template /Applications/VLC.app offline no-launch        # no network, no other programs
+menshen template /Applications/VLC.app temp-only background --memory-mb 2048 --cpu-seconds 3600
+menshen template /Applications/VLC.app --none                    # clear templates and limits
+```
+
+| Template | Effect |
+|---|---|
+| `offline` | No internet or local-network connections, even if learned. Local sockets (logging, DNS) still work. |
+| `temp-only` | Writes only to temp folders, never your files, even if learned. Command-line tools get a private TMPDIR. Mac apps can only use the shared system temp folder (macOS limitation). |
+| `no-launch` | Can't start other programs, only its own helpers. |
+| `background` | Low CPU priority and throttled disk I/O (`taskpolicy`). |
+| `--cpu-seconds` / `--memory-mb` | Hard limits: stopped after N seconds of CPU time, killed above N MiB. |
+
+The sandbox itself can't cap CPU or memory; those come from `taskpolicy` and `ulimit` at launch. A "max 50% CPU" cap isn't offered: macOS has no such control, and it would need a pause/resume watchdog.
 
 ## Replacing an app
 
@@ -78,7 +98,7 @@ menshen swaps
 
 ### Editing a config
 
-Each rule has an `action` (`allow`/`deny`), its `operations`, a `filter`, how often learning `seen` it, and a `note`. To permit something flagged, change its `action` to `"allow"`. `logging` switches the reported categories (`denials`, `network`, `exec`, `writeOutside`) on or off.
+Each rule has an `action` (`allow`/`deny`), its `operations`, a `filter`, how often learning `seen` it, and a `note`. To permit something flagged, change its `action` to `"allow"`. `logging` switches the reported categories (`denials`, `network`, `exec`, `writeOutside`) on or off. `activity` (on by default) also reports everyday activity that no other switch covers: reads outside system files, writes inside the app's own folders, local sockets, services and devices. That's what feeds the live dashboard. System-file reads are never reported; they would be thousands of uninteresting lines.
 
 The compiled profile is kept short and auditable. Rules with the same action and operations become one statement, and IDs and counts stay in the JSON. Order: deny default + `system.sb` → always-on rules (the app's own bundle, own preferences, Apple services and preferences) → learned rules → your rules → hardening → `(deny file-link)`. Within each section, allows come first and denies after, so a rule you switch off wins. In SBPL a later matching rule wins, which a test checks against the real kernel. So hardening overrides broader learned allows, and a hardening rule you flip to `allow` takes effect.
 
@@ -92,7 +112,7 @@ The compiled profile is kept short and auditable. Rules with the same action and
   - System locations are read-only.
   - Anything else stays an exact path, and becomes a folder rule once a folder has 4+ files.
   - Mach services, preference domains, IOKit classes and ports stay exact.
-- **Hardening** rules are always present. The list is in [`Hardening.swift`](Sources/MenshenCore/Hardening.swift). The app's own data inside a protected folder (its own group container, or a browser's own profile) is re-allowed.
+- **Hardening** rules are always present, and older configs pick up new ones automatically when compiled. Besides credential folders, browsers, mail and messages, shell history and startup items, a **sanity set** covers secrets by name anywhere in your home (`.env*`, `*.pem *.key *.p12 *.pfx *.kdbx`, `id_rsa*`/`id_ed25519*`, `.git-credentials`), more credential stores (`.npmrc`, `.pypirc`, `.azure`, `.config/op`, `.password-store`, `.pgpass`…), chat-app sessions (Slack, Discord, Signal, Telegram, WhatsApp) and personal data (Contacts, Calendars, the Photos library). The full list is in [`Hardening.swift`](Sources/MenshenCore/Hardening.swift). The app's own data inside a protected folder (its own group container, or a browser's own profile) is re-allowed.
 
 Design records: [`docs/DECISIONS.md`](docs/DECISIONS.md). Platform research: [`docs/reference/apple-app-sandbox.md`](docs/reference/apple-app-sandbox.md).
 

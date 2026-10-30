@@ -143,7 +143,40 @@ import Testing
         #expect(denied.contains { $0.target.hasSuffix("/.ssh/id_test") && $0.operation.hasPrefix("file-read") })
         #expect(records.contains { $0.verdict == .allow && $0.category == "exec" && $0.target == "/bin/echo" })
         #expect(records.contains { $0.verdict == .allow && $0.category == "network" })
+        #expect(records.contains { $0.verdict == .allow && $0.category == "read" && $0.target.hasSuffix("/input.txt") },
+                "activity logging reports ordinary reads for the live dashboard")
         #expect(!denied.contains { $0.target.hasSuffix("/allowed/out.txt") })
+    }
+
+    /// Templates override what was learned: the probe's learned connect, launch and write are
+    /// blocked, its learned read still works.
+    @Test func templatesRestrictWhatWasLearned() throws {
+        let learned = try learn()
+        var config = learned.config
+        config.templates = [.offline, .noLaunch, .tempOnly]
+        try config.write(to: learned.configURL)
+
+        let (_, records) = try enforce()
+        let denied = records.filter { $0.verdict == .deny }
+        #expect(denied.contains { $0.operation.hasPrefix("network-outbound") }, "offline")
+        #expect(denied.contains { $0.operation.hasPrefix("process-exec") && $0.target == "/bin/echo" }, "no other programs")
+        #expect(denied.contains { $0.target.hasSuffix("/allowed/out.txt") }, "temp-only blocks even learned writes")
+        #expect(!exists(base + "/allowed/out.txt"))
+        #expect(records.contains { $0.verdict == .allow && $0.target.hasSuffix("/input.txt") }, "reads still work")
+    }
+
+    /// Background priority and limits wrap the launch; the app still runs and is still tracked.
+    @Test func backgroundPriorityStillRunsAndIsTracked() throws {
+        let learned = try learn()
+        var config = learned.config
+        config.templates = [.background]
+        config.limits = ResourceLimits(cpuSeconds: 60, memoryMB: 512)
+        try config.write(to: learned.configURL)
+
+        let (summary, records) = try enforce()
+        #expect(summary.outcome.status == 0)
+        #expect(exists(base + "/allowed/out.txt"))
+        #expect(records.contains { $0.target.hasSuffix("/input.txt") }, "reports from the wrapped launch are attributed")
     }
 
     /// The assertions above must be able to fail: flip one learned rule and watch it bite.

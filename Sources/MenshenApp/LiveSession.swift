@@ -58,6 +58,12 @@ final class LiveSession {
     var denied = 0
     var byCategory: [String: Int] = [:]
     var finished: (String, Bool)?   // (summary, succeeded)
+    /// Enforce records, for the dashboard's activity panel (capped like `rows`).
+    var records: [EnforceRecord] = []
+    /// Started by a launcher (the app was opened from the Dock/Finder), followed through its log.
+    var external = false
+    @ObservationIgnored private var pendingRecords: [EnforceRecord] = []
+    @ObservationIgnored private let recordLock = NSLock()
 
     let stop = StopHandle()
     @ObservationIgnored private let buffer = RowBuffer()
@@ -100,11 +106,40 @@ final class LiveSession {
     }
 
     func add(_ record: EnforceRecord) {
+        recordLock.withLock { pendingRecords.append(record) }
         buffer.add(time: record.ts, verdict: record.verdict, category: record.category,
                    operation: record.operation, target: record.target, process: record.process, count: record.count)
     }
 
+    /// For external sessions: records read from the launcher's log (main thread).
+    func addFollowed(_ new: [EnforceRecord]) {
+        new.forEach(add)
+        flush()
+    }
+
+    /// For external sessions: the app quit.
+    func endExternal() {
+        flush()
+        timer?.invalidate()
+        running = false
+        finished = ("\(total) events, \(denied) blocked", true)
+        status = "Ended"
+    }
+
+    func startExternal() {
+        status = "Opened normally (through its launcher)"
+        timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in self?.flush() }
+    }
+
     private func flush() {
+        let newRecords: [EnforceRecord] = recordLock.withLock {
+            defer { pendingRecords.removeAll(keepingCapacity: true) }
+            return pendingRecords
+        }
+        if !newRecords.isEmpty {
+            records.append(contentsOf: newRecords)
+            if records.count > Self.maxRows { records.removeFirst(records.count - Self.maxRows) }
+        }
         let new = buffer.drain()
         guard !new.isEmpty else { return }
         for row in new {

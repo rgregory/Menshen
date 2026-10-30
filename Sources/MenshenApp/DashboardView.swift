@@ -12,6 +12,13 @@ struct DashboardView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 StatusStrip(store: store, item: item, session: session, problem: problem)
+                if let session, session.kind == .enforce {
+                    ActivityPanel(title: session.running ? "Live activity" : "This run", live: session.running,
+                                  records: session.records)
+                } else if !store.lastRecords.isEmpty, let date = store.lastEnforce {
+                    ActivityPanel(title: "Last run · \(date.formatted(date: .abbreviated, time: .shortened))",
+                                  live: false, records: store.lastRecords)
+                }
                 if let entry = item.entry {
                     let summary = AccessSummary.make(entry.config, environment: store.environment)
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 320), spacing: 16, alignment: .top)],
@@ -26,9 +33,10 @@ struct DashboardView: View {
                         Card("Sensitive", systemImage: "lock.shield", items: summary.sensitive,
                              empty: "Nothing sensitive was touched while learning",
                              footer: "\(summary.protectedCount) sensitive locations and behaviors are protected.")
+                        Card("Restrictions", systemImage: "lock", items: summary.restrictions,
+                             empty: "No templates. Add them in Config.")
                         ReplaceCard(store: store, item: item, entry: entry, problem: problem)
                     }
-                    BlockedCard(store: store, session: session)
                 } else {
                     GroupBox {
                         VStack(alignment: .leading, spacing: 8) {
@@ -205,66 +213,9 @@ struct AccessBadge: View {
         case "allowed": return .orange
         case "read & write", "write": return .purple
         case "run", "connect", "listen": return .blue
+        case "on", "limit": return .green
         default: return .secondary
         }
-    }
-}
-
-/// Blocked attempts: live while enforcing, otherwise the newest enforce run's top attempts.
-struct BlockedCard: View {
-    let store: AppStore
-    let session: LiveSession?
-
-    var body: some View {
-        GroupBox {
-            VStack(alignment: .leading, spacing: 6) {
-                if let session, session.kind == .enforce {
-                    let blocked = session.rows.filter { $0.verdict == .deny }.suffix(10).reversed()
-                    if blocked.isEmpty { Text("Nothing blocked so far.").foregroundStyle(.secondary) }
-                    ForEach(Array(blocked)) { row in
-                        line(time: row.time, operation: row.operation, target: row.target, count: row.count)
-                    }
-                } else if store.lastBlocked.isEmpty {
-                    Text(store.lastEnforce == nil ? "No enforce runs yet." : "The last run blocked nothing.")
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(store.lastBlocked) { b in
-                        line(time: b.last, operation: b.operation, target: b.target, count: b.count)
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(4)
-        } label: {
-            Label(title, systemImage: "hand.raised").font(.headline)
-        }
-    }
-
-    var title: String {
-        if let session, session.kind == .enforce, session.running { return "Blocked just now" }
-        guard let date = store.lastEnforce else { return "Blocked" }
-        return "Most blocked in the last run (\(date.formatted(date: .abbreviated, time: .shortened)))"
-    }
-
-    func line(time: Date?, operation: String, target: String, count: Int) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Text(time.map { $0.formatted(date: .omitted, time: .standard) } ?? "")
-                .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                .frame(width: 70, alignment: .leading)
-            Text(RuleText.verb([groupOperation(operation)]))
-                .frame(width: 150, alignment: .leading)
-            Text(target).lineLimit(2).textSelection(.enabled)
-            Spacer()
-            if count > 1 { Text("×\(count)").font(.caption).foregroundStyle(.secondary) }
-        }
-    }
-
-    /// Kernel operation names (file-write-create) → the rule groups RuleText knows (file-write*).
-    func groupOperation(_ op: String) -> String {
-        if op.hasPrefix("file-write") { return "file-write*" }
-        if op.hasPrefix("file-read") { return "file-read*" }
-        if op.hasPrefix("process-exec") { return "process-exec*" }
-        return op
     }
 }
 
@@ -313,5 +264,93 @@ struct ReplaceCard: View {
         } message: {
             Text("Menshen will remove its launcher and move the original app back. Quit the app first.")
         }
+    }
+}
+
+/// What the app is doing (live) or did (last run): network, disk, launches, services, blocked.
+struct ActivityPanel: View {
+    let title: String
+    let live: Bool
+    let records: [EnforceRecord]
+
+    var body: some View {
+        let a = ActivitySummary.make(records)
+        let disk = a.counts["read", default: 0] + a.counts["write", default: 0] + a.counts["write-outside", default: 0]
+        GroupBox {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 22) {
+                    Metric(value: a.total, label: "events")
+                    Metric(value: a.blocked, label: "blocked", color: a.blocked > 0 ? .red : .primary)
+                    Metric(value: a.counts["network", default: 0], label: "network")
+                    Metric(value: disk, label: "disk")
+                    Metric(value: a.counts["exec", default: 0], label: "launches")
+                    Metric(value: a.counts["service", default: 0], label: "services")
+                    Spacer()
+                }
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: 12, alignment: .top)],
+                          alignment: .leading, spacing: 12) {
+                    ActivityTile(title: "Blocked", systemImage: "hand.raised", entries: a.blockedTop,
+                                 empty: "Nothing blocked", tint: .red)
+                    ActivityTile(title: "Network", systemImage: "network", entries: a.network, empty: "No network activity")
+                    ActivityTile(title: "Disk", systemImage: "internaldrive", entries: a.disk,
+                                 empty: "No file activity outside system files")
+                    ActivityTile(title: "Launches", systemImage: "terminal", entries: a.launches, empty: "No other programs")
+                    ActivityTile(title: "Services", systemImage: "gearshape.2", entries: a.services, empty: "No service lookups")
+                    if !a.devices.isEmpty {
+                        ActivityTile(title: "Devices", systemImage: "cpu", entries: a.devices, empty: "")
+                    }
+                }
+                if !records.isEmpty {
+                    Divider()
+                    Text("Recent").font(.caption.bold()).foregroundStyle(.secondary)
+                    ForEach(Array(records.suffix(8).reversed().enumerated()), id: \.offset) { _, r in
+                        HStack(alignment: .firstTextBaseline, spacing: 10) {
+                            Text(r.ts.formatted(date: .omitted, time: .standard))
+                                .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                                .frame(width: 70, alignment: .leading)
+                            AccessBadge(text: r.verdict == .deny ? "blocked" : r.category)
+                                .frame(width: 100, alignment: .leading)
+                            Text(r.target).font(.caption).lineLimit(1).truncationMode(.middle)
+                            Spacer()
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(4)
+        } label: {
+            HStack(spacing: 6) {
+                if live { Circle().fill(.green).frame(width: 8, height: 8) }
+                Label(title, systemImage: "waveform.path.ecg").font(.headline)
+            }
+        }
+    }
+}
+
+struct ActivityTile: View {
+    let title: String
+    let systemImage: String
+    let entries: [ActivitySummary.Entry]
+    let empty: String
+    var tint: Color = .accentColor
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label(title, systemImage: systemImage).font(.subheadline.bold())
+            if entries.isEmpty {
+                Text(empty).font(.caption).foregroundStyle(.secondary)
+            }
+            ForEach(entries) { e in
+                HStack(alignment: .firstTextBaseline) {
+                    Text(e.label).font(.caption).lineLimit(1).truncationMode(.middle).help(e.label)
+                    Spacer(minLength: 6)
+                    if !e.detail.isEmpty { Text(e.detail).font(.caption2).foregroundStyle(.secondary) }
+                    Text("\(e.count)").font(.caption.monospacedDigit().bold()).foregroundStyle(tint)
+                }
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
     }
 }

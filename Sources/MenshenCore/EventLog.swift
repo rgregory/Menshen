@@ -38,11 +38,19 @@ public struct EnforceRecord: Codable, Equatable, Sendable {
     public var category: String
     public var count: Int
 
-    static func category(for event: SandboxEvent) -> String {
+    /// denied · network · exec · write (in the app's own folders) · write-outside · read · service · device
+    static func category(for event: SandboxEvent, ownFolders: [String] = []) -> String {
+        let op = event.operation
         if event.verdict == .deny { return "denied" }
-        if event.operation.hasPrefix("network-") { return ReportCategory.network.rawValue }
-        if event.operation.hasPrefix("process-exec") { return ReportCategory.exec.rawValue }
-        if event.operation.hasPrefix("file-write") { return ReportCategory.writeOutside.rawValue }
+        if op.hasPrefix("network-") { return ReportCategory.network.rawValue }
+        if op.hasPrefix("process-exec") { return ReportCategory.exec.rawValue }
+        if op.hasPrefix("file-write") {
+            let path = Generalizer.path(from: event.target) ?? ""
+            return ownFolders.contains { path.isWithin($0) } ? "write" : ReportCategory.writeOutside.rawValue
+        }
+        if op.hasPrefix("file-read") || op == "file-map-executable" { return "read" }
+        if op.hasPrefix("mach-") { return "service" }
+        if op.hasPrefix("iokit") { return "device" }
         return "allowed"
     }
 }

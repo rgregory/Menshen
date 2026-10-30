@@ -59,14 +59,4 @@ import Testing
         #expect(RuleText.access(["process-exec*"]) == "run")
         #expect(RuleText.verb(["sysctl-read"]) == "Read system information")
     }
-
-    @Test func blockedSummaryRanksByCount() {
-        func r(_ target: String, _ verdict: Verdict = .deny) -> EnforceRecord {
-            EnforceRecord(ts: Date(), runId: "r", pid: 1, process: "Foo", verdict: verdict,
-                          operation: "file-write-create", target: target, category: "denied", count: 1)
-        }
-        let top = BlockedSummary.top([r("/a"), r("/b"), r("/b"), r("/c", .allow)])
-        #expect(top.map(\.target) == ["/b", "/a"])
-        #expect(top.first?.count == 2)
-    }
 }

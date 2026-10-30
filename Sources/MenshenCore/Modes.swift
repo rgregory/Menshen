@@ -121,6 +121,8 @@ public enum Learn {
         if let previous {
             let ids = Set(config.rules.map(\.id))
             config.rules += previous.rules.filter { $0.source == .custom && !ids.contains($0.id) }
+            config.templates = previous.templates
+            config.limits = previous.limits
         }
         if let previous, options.merge {
             config.keepEdits(from: previous)
@@ -191,6 +193,8 @@ public enum Enforce {
         let profileURL = configURL.deletingPathExtension().appendingPathExtension("sb")
         try text.write(to: profileURL, atomically: true, encoding: .utf8)
 
+        var control = options.control
+        control.launch = try launchOptions(config, environment: environment)
         let runId = UUID().uuidString
         let logURL = environment.logsDir(config.target.key).appendingPathComponent("\(fileStamp()).jsonl")
         let log = try NDJSONWriter(logURL)
@@ -198,18 +202,19 @@ public enum Enforce {
         let tally = Tally()
         let logging = config.logging
         let onRecord = options.onRecord
+        let ownFolders = config.anchors.map(environment.expand)
 
         say("enforcing \(configURL.path) on \(target.identity.name). Log: \(logURL.path)")
         let result = try Session.run(
             profile: profileURL, target: target, arguments: options.arguments,
-            duration: options.duration, environment: environment, control: options.control,
+            duration: options.duration, environment: environment, control: control,
             onEvent: { event in
                 if event.verdict == .deny && !logging.denials { return }
                 let record = EnforceRecord(
                     ts: Date(), runId: runId, pid: event.pid, process: event.process,
                     verdict: event.verdict, operation: event.operation,
                     target: environment.abbreviate(event.target),
-                    category: EnforceRecord.category(for: event), count: event.count)
+                    category: EnforceRecord.category(for: event, ownFolders: ownFolders), count: event.count)
                 log.write(record)
                 onRecord?(record)
                 if tally.add(record) {
@@ -222,6 +227,28 @@ public enum Enforce {
             reportedAllows: tally.allows, outcome: result.outcome, drained: result.drained,
             streamNotices: result.streamNotices
         )
+    }
+
+    /// Background priority and hard limits wrap the launch; Temp-only exports a private TMPDIR.
+    static func launchOptions(_ config: MenshenConfig, environment: MenshenEnvironment) throws -> LaunchOptions {
+        let templates = Set(config.templates ?? [])
+        var launch = LaunchOptions()
+        if let seconds = config.limits?.cpuSeconds, seconds > 0 {
+            launch.wrapper += ["/bin/sh", "-c", "ulimit -t \(seconds); exec \"$@\"", "sh"]
+        }
+        if templates.contains(.background) {
+            launch.wrapper += ["/usr/sbin/taskpolicy", "-c", "background", "-d", "throttle"]
+        }
+        // The memory limit doesn't survive sandbox-exec (tested), so it's applied inside, right before the app.
+        if let mb = config.limits?.memoryMB, mb > 0 {
+            launch.inner = ["/usr/sbin/taskpolicy", "-m", String(mb)]
+        }
+        if templates.contains(.tempOnly) {
+            let dir = environment.privateTemp(config.target.key)
+            try FileManager.default.ensureDirectory(dir)
+            launch.environment["TMPDIR"] = dir.path + "/"
+        }
+        return launch
     }
 
     static func checkIdentity(expected: TargetIdentity, actual: TargetIdentity, allowChanged: Bool,
