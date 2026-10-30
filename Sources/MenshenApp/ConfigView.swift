@@ -1,0 +1,109 @@
+import MenshenCore
+import SwiftUI
+
+struct ConfigView: View {
+    let store: AppStore
+    let item: AppItem
+
+    var body: some View {
+        if item.entry == nil {
+            ContentUnavailableView("Not learned yet", systemImage: "doc.badge.gearshape",
+                                   description: Text("Learn the app first to create its config."))
+        } else {
+            content
+        }
+    }
+
+    var content: some View {
+        let key = item.id
+        let dirty = store.isDirty(key)
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Picker("Show", selection: Bindable(store).ruleFilter) {
+                    ForEach(RuleFilter.allCases) { Text($0.rawValue).tag($0) }
+                }
+                .frame(width: 200)
+                TextField("Search rules", text: Bindable(store).ruleSearch)
+                Button("Show Profile") { store.showProfile(key) }
+                Button("Revert") { store.revert(key) }.disabled(!dirty)
+                Button("Save") { store.save(key) }.disabled(!dirty).keyboardShortcut("s")
+            }
+            logging(key)
+            Table(store.rules(key)) {
+                TableColumn("Allow") { rule in
+                    Toggle("", isOn: Binding(get: { rule.action == .allow },
+                                             set: { store.setAction(key, ruleID: rule.id, allow: $0) }))
+                        .labelsHidden()
+                }
+                .width(40)
+                TableColumn("What") { rule in
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        if rule.flagged == true { Image(systemName: "flag.fill").foregroundStyle(.orange) }
+                        Text(RuleText.describe(rule)).lineLimit(2)
+                    }
+                    .help("\(rule.id): \(rule.operations.joined(separator: " ")) \(rule.filter.kind.rawValue) \(rule.filter.value ?? "")")
+                }
+                .width(min: 240, ideal: 380)
+                TableColumn("Access") { rule in AccessBadge(text: RuleText.access(rule.operations)) }
+                    .width(min: 80, ideal: 90)
+                TableColumn("Source") { rule in
+                    Text(rule.source == .hardening ? "protection" : "learned").font(.caption).foregroundStyle(.secondary)
+                }
+                .width(min: 60, ideal: 70)
+                TableColumn("Seen") { rule in Text(rule.seen > 0 ? "\(rule.seen)" : "").monospacedDigit() }
+                    .width(min: 35, ideal: 45)
+                TableColumn("Note") { rule in
+                    Text(note(rule)).font(.caption).foregroundStyle(.secondary).lineLimit(2).help(rule.note ?? "")
+                }
+                .width(min: 120, ideal: 220)
+            }
+            if dirty {
+                Text("Unsaved changes. Save writes a backup of the previous config first.")
+                    .font(.caption).foregroundStyle(.orange)
+            }
+        }
+        .padding()
+        .sheet(isPresented: Binding(get: { store.profileText != nil }, set: { if !$0 { store.profileText = nil } })) {
+            VStack(alignment: .leading) {
+                Text("Compiled Seatbelt profile").font(.headline)
+                ScrollView {
+                    Text(store.profileText ?? "")
+                        .font(.system(.caption, design: .monospaced))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                HStack {
+                    Spacer()
+                    Button("Close") { store.profileText = nil }.keyboardShortcut(.defaultAction)
+                }
+            }
+            .padding()
+            .frame(width: 820, height: 560)
+        }
+    }
+
+    func logging(_ key: String) -> some View {
+        HStack(spacing: 14) {
+            Text("Log:").foregroundStyle(.secondary)
+            toggle(key, "Blocked", \.denials)
+            toggle(key, "Network", \.network)
+            toggle(key, "Launches", \.exec)
+            toggle(key, "Outside writes", \.writeOutside)
+                .help("Writes outside the app's own folders")
+        }
+    }
+
+    /// The first sentence of a rule's note, or what gets logged for it.
+    func note(_ rule: Rule) -> String {
+        if let note = rule.note {
+            return note.replacingOccurrences(of: "Not seen during learning.", with: "").trimmingCharacters(in: .whitespaces)
+        }
+        return rule.category.map { "logged (\($0.rawValue))" } ?? ""
+    }
+
+    func toggle(_ key: String, _ title: String, _ path: WritableKeyPath<LoggingSettings, Bool>) -> some View {
+        Toggle(title, isOn: Binding(
+            get: { store.drafts[key]?.logging[keyPath: path] ?? true },
+            set: { store.drafts[key]?.logging[keyPath: path] = $0 }))
+    }
+}

@@ -22,6 +22,18 @@
 
 **Rule:** In this user's shell (zsh), pass file lists with `| tr '\n' '\0' | xargs -0 …` (or `${=VAR}`), never as a bare `$VAR`.
 
+## 2026-10-29 · A failure test must check *which* failure happened
+
+**What happened:** `failedLauncherBuildRollsBack` passed while testing nothing. Replace failed earlier, on a missing stub (and in another version on a signature check), before the rename, so the rollback never ran. `#expect(throws:)` was satisfied by the wrong error.
+
+**Rule:** When testing an error path, assert the error that proves the intended path ran (here "building the launcher failed … original is back in place"), and mutation-check it.
+
+## 2026-10-29 · Unit tests of parts don't prove the whole chain
+
+**What happened:** every swap unit test passed, but a replaced app couldn't start at all: its profile pointed at the old bundle path. Only the end-to-end test (LaunchServices → launcher → enforce → dummy app) caught it.
+
+**Rule:** For a feature that crosses process or OS boundaries, write one real end-to-end test before calling it done.
+
 ## 2026-10-29 · Fix a flaky build at its cause, not with retries
 
 **What happened:** `swift test` failed about half the time with "plugin for module 'TestingMacros' not found". A retry wrapper didn't help: within one invocation every retry failed. Comparing compiler flags showed the failing builds lacked `-plugin-path …/host/plugins/testing`. Adding that flag in `Package.swift` made 6 of 6 runs pass.

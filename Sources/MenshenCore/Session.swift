@@ -1,5 +1,17 @@
 import Foundation
 
+/// How a session is controlled from outside. The CLI forwards Ctrl-C; the GUI and the launcher
+/// stop through a `StopHandle` instead.
+public struct SessionControl: Sendable {
+    public var forwardSignals: Bool
+    public var stop: StopHandle?
+
+    public init(forwardSignals: Bool = false, stop: StopHandle? = nil) {
+        self.forwardSignals = forwardSignals
+        self.stop = stop
+    }
+}
+
 /// One observed run: log tap up and proven live → target launched under a profile → target
 /// exits → stream drained. Only reports from the target's process tree are kept.
 public enum Session {
@@ -18,6 +30,7 @@ public enum Session {
         arguments: [String],
         duration: TimeInterval?,
         environment: MenshenEnvironment,
+        control: SessionControl = SessionControl(),
         onEvent: @escaping @Sendable (SandboxEvent) -> Void = { _ in }
     ) throws -> Result {
         let collector = Collector(onEvent: onEvent)
@@ -31,6 +44,8 @@ public enum Session {
             executable: target.identity.executable,
             arguments: arguments,
             duration: duration,
+            forwardSignals: control.forwardSignals,
+            stop: control.stop,
             onLaunch: { collector.attach(ProcessTree(root: $0)) },
             tick: { collector.refresh() }
         )

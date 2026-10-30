@@ -47,7 +47,15 @@ public struct MenshenEnvironment: Sendable {
         )
     }
 
+    /// The current user's environment with explicit data and log folders (used by launchers,
+    /// which carry the folders they were created with).
+    public static func current(dataRoot: URL, logsRoot: URL) -> MenshenEnvironment {
+        MenshenEnvironment(home: NSHomeDirectory(), dataRoot: dataRoot, logsRoot: logsRoot,
+                           userTempRoot: darwinUserRoot())
+    }
+
     public var profilesDir: URL { dataRoot.appendingPathComponent("profiles") }
+    public var swapsURL: URL { dataRoot.appendingPathComponent("swaps.json") }
     public var canaryDir: URL { dataRoot.appendingPathComponent("canary") }
     public func learnDir(_ key: String) -> URL { dataRoot.appendingPathComponent("learn/\(key)") }
     public func logsDir(_ key: String) -> URL { logsRoot.appendingPathComponent(key) }

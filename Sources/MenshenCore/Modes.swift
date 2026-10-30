@@ -6,6 +6,9 @@ public struct LearnOptions: Sendable {
     public var duration: TimeInterval?
     public var merge = false
     public var configPath: URL?
+    public var control = SessionControl(forwardSignals: true)
+    /// Every captured report, as it arrives (for live UIs). Called on a background queue.
+    public var onEvent: (@Sendable (SandboxEvent) -> Void)?
 
     public init(target: String) { self.target = target }
 }
@@ -27,6 +30,9 @@ public struct EnforceOptions: Sendable {
     public var configPath: URL?
     public var allowChanged = false
     public var duration: TimeInterval?
+    public var control = SessionControl(forwardSignals: true)
+    /// Every logged record, as it arrives (for live UIs). Called on a background queue.
+    public var onRecord: (@Sendable (EnforceRecord) -> Void)?
 
     public init(target: String) { self.target = target }
 }
@@ -58,6 +64,7 @@ public enum Learn {
 
         let profile = learnDir.appendingPathComponent("learn.sb")
         try ProfileCompiler.learnProfile.write(to: profile, atomically: true, encoding: .utf8)
+        let onEvent = options.onEvent
         let captureURL = learnDir.appendingPathComponent("\(fileStamp()).ndjson")
         let capture = try NDJSONWriter(captureURL)
         defer { capture.close() }
@@ -65,8 +72,11 @@ public enum Learn {
         say("learning \(target.identity.name) (\(target.identity.executable)). Use the app normally, then quit it\(options.duration.map { " or wait \(Int($0))s" } ?? "").")
         let result = try Session.run(
             profile: profile, target: target, arguments: options.arguments,
-            duration: options.duration, environment: environment,
-            onEvent: { capture.write($0) }
+            duration: options.duration, environment: environment, control: options.control,
+            onEvent: { event in
+                capture.write(event)
+                onEvent?(event)
+            }
         )
         capture.close()
 
@@ -96,15 +106,15 @@ public enum Learn {
 
         var config = build(target: target, events: events, environment: environment,
                            runs: runs, captures: captures, warnings: warnings)
-        var backupURL: URL?
-        if let previous {
-            if options.merge {
-                config.keepEdits(from: previous)
-            }
-            backupURL = configURL.deletingPathExtension().appendingPathExtension("bak-\(fileStamp()).json")
-            try fm.copyItem(at: configURL, to: backupURL!)
+        // Learning a replaced app runs its hidden original; store the app's normal location so
+        // the config stays valid after Restore.
+        if let swap = Swap.records(environment).first(where: { $0.hiddenPath == target.identity.path }) {
+            config = config.rebased(to: swap.appPath)
         }
-        try config.write(to: configURL)
+        if let previous, options.merge {
+            config.keepEdits(from: previous)
+        }
+        let backupURL = try config.save(to: configURL)
         return LearnSummary(configURL: configURL, captureURL: captureURL, backupURL: backupURL, config: config,
                             eventsThisRun: result.events.count, processes: result.processes,
                             outcome: result.outcome)
@@ -155,11 +165,13 @@ public enum Enforce {
         environment: MenshenEnvironment = .current(),
         say: @escaping @Sendable (String) -> Void = { _ in }
     ) throws -> EnforceSummary {
-        let (configURL, config) = try locateConfig(options, environment: environment)
-        let targetPath = options.target.hasSuffix(".json") ? config.target.path : options.target
+        let (configURL, stored) = try locateConfig(options, environment: environment)
+        let targetPath = options.target.hasSuffix(".json") ? stored.target.path : options.target
         let target = try ResolvedTarget.resolve(targetPath)
         try target.preflight()
-        try checkIdentity(expected: config.target, actual: target.identity, allowChanged: options.allowChanged, say: say)
+        try checkIdentity(expected: stored.target, actual: target.identity, allowChanged: options.allowChanged, say: say)
+        // A replaced app runs from its hidden location; its own-bundle rules must follow it.
+        let config = stored.rebased(to: target.identity.path)
 
         let text = ProfileCompiler(environment: environment).compile(config, source: configURL.path)
         if let error = ProfileCompiler.validate(text) {
@@ -174,11 +186,12 @@ public enum Enforce {
         defer { log.close() }
         let tally = Tally()
         let logging = config.logging
+        let onRecord = options.onRecord
 
         say("enforcing \(configURL.path) on \(target.identity.name). Log: \(logURL.path)")
         let result = try Session.run(
             profile: profileURL, target: target, arguments: options.arguments,
-            duration: options.duration, environment: environment,
+            duration: options.duration, environment: environment, control: options.control,
             onEvent: { event in
                 if event.verdict == .deny && !logging.denials { return }
                 let record = EnforceRecord(
@@ -187,6 +200,7 @@ public enum Enforce {
                     target: environment.abbreviate(event.target),
                     category: EnforceRecord.category(for: event), count: event.count)
                 log.write(record)
+                onRecord?(record)
                 if tally.add(record) {
                     say("DENY \(record.operation) \(record.target)  [\(record.process) \(record.pid)]")
                 }

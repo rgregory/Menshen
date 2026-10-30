@@ -65,6 +65,11 @@ public struct ResolvedTarget: Sendable {
         )
     }
 
+    /// The cdhash of the code at `path`, or nil if unsigned.
+    public static func signingCdhash(_ path: String) -> String? {
+        SigningInfo.read(URL(fileURLWithPath: path)).cdhash
+    }
+
     /// Refuses targets Seatbelt can't wrap, before anything is launched.
     public func preflight() throws {
         guard FileManager.default.isExecutableFile(atPath: "/usr/bin/sandbox-exec") else {

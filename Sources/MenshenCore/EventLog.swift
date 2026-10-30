@@ -27,7 +27,7 @@ final class NDJSONWriter: @unchecked Sendable {
 }
 
 /// Enforce-mode record: every denial plus the risky allows the profile reports.
-public struct EnforceRecord: Codable, Sendable {
+public struct EnforceRecord: Codable, Equatable, Sendable {
     public var ts: Date
     public var runId: String
     public var pid: Int32

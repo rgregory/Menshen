@@ -4,9 +4,11 @@ import Testing
 
 /// The always-on Apple service/preference rules (ADR-004) against the real kernel, launchd and
 /// cfprefsd. A control profile without those two lines proves the probe can fail.
-@Suite struct PlatformRuleTests {
+@Suite final class PlatformRuleTests {
     let dir: String
     let probe: String
+
+    deinit { try? FileManager.default.removeItem(atPath: dir) }
 
     init() throws {
         dir = "/private/tmp/menshen-baseline-\(UUID().uuidString)"
@@ -63,12 +65,14 @@ import Testing
 }
 
 /// Learn → enforce against a real binary, the real kernel and the real log stream.
-@Suite(.serialized) struct IntegrationTests {
+@Suite(.serialized) final class IntegrationTests {
     let base: String
     let home: String
     let probe: String
     let env: MenshenEnvironment
     let port = "45917"
+
+    deinit { try? FileManager.default.removeItem(atPath: base) }
 
     init() throws {
         // Outside the user temp root on purpose: that folder is an anchor and would allow everything.

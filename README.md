@@ -5,7 +5,31 @@ Menshen (門神, the door gods painted on Chinese gates) confines a macOS app wi
 1. **`menshen learn`** runs the app with everything allowed and every operation reported. From that it writes a config: the learned baseline, plus hardening that denies credential stores, other apps' data and persistence locations, *even if the app touched them while learning* (those rules are **FLAGGED**).
 2. **`menshen enforce`** runs the app under a deny-by-default profile compiled from that config. Every denial is logged as JSONL, along with the risky things it was allowed to do: outbound network, process launches, and writes outside the app's own folders.
 
+3. **Replace** swaps an app for a launcher with the same name and icon, so opening it from the Dock, Finder or Spotlight always runs it under enforce. **Restore** puts the original back.
+
 No root needed. Tested on macOS 27.0.1.
+
+## The app
+
+```sh
+./scripts/build-app.sh          # builds build/Menshen.app (no Xcode needed)
+open build/Menshen.app
+```
+
+- **Dashboard:** a plain-language summary of what the selected app may access (files, network, launches, services and settings, sensitive locations), the most-blocked attempts from its last run, and live counters and blocked attempts while it runs.
+- **Session:** learn or enforce with a live event table, and Stop.
+- **History:** past learn captures and enforce logs, filterable (blocked, network, launches, outside writes) and searchable.
+- **Config:** every rule in plain words, with an Allow toggle, flagged rules marked, logging switches, Save (keeps a backup), and Show Profile (the compiled SBPL).
+
+Add apps with **+** or by dropping them on the sidebar.
+
+## Replacing an app
+
+`menshen replace /Applications/VLC.app` (or **Replace…** in the app):
+- renames the app to `/Applications/.VLC.menshen.app`, hidden, in the same folder, with its contents and signature untouched;
+- puts a launcher at `/Applications/VLC.app` with VLC's name, icon and document types.
+
+The launcher runs the original under `enforce` with any documents it was opened with, writes the usual log, and exits when VLC quits. `menshen restore org.videolan.vlc` reverses it. `menshen swaps` lists replaced apps. See [ADR-005](docs/memory/decisions/0005-replace-apps-with-a-launcher.md).
 
 ## Usage
 
@@ -20,6 +44,9 @@ swift build -c release
 menshen learn   <App.app | binary> [--duration 10m] [--merge] [--config PATH] [-- app-args…]
 menshen enforce <App.app | binary | config.json> [--duration 10m] [--config PATH] [--allow-changed] [-- app-args…]
 menshen show    <App.app | binary | config.json> [--config PATH]
+menshen replace <App.app>
+menshen restore <App.app | bundle-id>
+menshen swaps
 ```
 
 - `--merge` adds another learning run to the existing config and keeps your edits. Rule IDs are content hashes, so they stay stable across runs.
@@ -61,13 +88,17 @@ Design records: [`docs/DECISIONS.md`](docs/DECISIONS.md). Platform research: [`d
 - **Reports from processes that exit within milliseconds** of an operation are sometimes dropped by the kernel. In testing, 12 of 20 were kept, versus 20 of 20 when the process stayed alive 300 ms. Enforcement is unaffected; logging and learning of very short-lived helpers are best-effort.
 - Privacy prompts (camera, Full Disk Access…) may name the terminal app instead of the wrapped app.
 - `sandbox-exec` is deprecated and `system.sb` is a private interface. Re-test after every macOS update.
+- **While replaced:** the Dock may show a second icon while the app runs, because the running process belongs to the hidden original. Routing documents and "Open with" to the launcher is best-effort. The app's updater updates the hidden original, after which enforce refuses until the app is re-learned. macOS App Management protection may need to allow Menshen to rename apps.
 - Threat model: Menshen protects against a compromised *app*, not a compromised user account. Configs are user-writable.
 
 ## Development
 
+Manual QA against VLC, the agreed QA app: [docs/QA.md](docs/QA.md).
+
 ```sh
 swift build
-swift test      # 31 tests; includes real-kernel tests (sandbox-exec + log stream), ~4 s
+swift test      # 44 tests, ~4 s: includes real-kernel tests (sandbox-exec + log stream) and a
+                #   launcher test that replaces a throwaway dummy app and opens it via LaunchServices
 ```
 
 The integration test compiles `Tests/MenshenCoreTests/Fixtures/probe.c`, learns it, then enforces it against a fake home folder. The parser fixture holds real kernel report lines captured from VLC.

@@ -8,6 +8,9 @@ let usage = """
       menshen learn   <App.app | binary> [--duration 10m] [--merge] [--config PATH] [-- app-args…]
       menshen enforce <App.app | binary | config.json> [--duration 10m] [--config PATH] [--allow-changed] [-- app-args…]
       menshen show    <App.app | binary | config.json> [--config PATH]
+      menshen replace <App.app>       swap the app for a launcher that always runs it under enforce
+      menshen restore <App.app | bundle-id>
+      menshen swaps                   list replaced apps
 
     learn    Run the app with everything allowed and every operation reported, then write a
              config: the learned baseline plus hardening (credentials, other apps' data and
@@ -15,6 +18,9 @@ let usage = """
     enforce  Run the app under the config. Denials and risky allows (network, process
              launches, writes outside the app's folders) go to a JSONL log.
     show     Print the SBPL profile the config compiles to.
+    replace  Rename the app to a hidden .Name.menshen.app (untouched) and put a launcher with
+             its name and icon in its place, so Dock/Finder/Spotlight run it under enforce.
+    restore  Remove the launcher and put the original back.
 
     Configs:  ~/Library/Application Support/Menshen/profiles/<bundle-id>.json
     Logs:     ~/Library/Logs/Menshen/<bundle-id>/<timestamp>.jsonl
@@ -106,6 +112,28 @@ func runEnforce(_ p: Parsed, _ target: String) throws -> Int32 {
     return s.outcome.wasSignaled ? 128 + s.outcome.status : s.outcome.status
 }
 
+func runReplace(_ target: String) throws -> Int32 {
+    guard let stub = Swap.defaultStub() else {
+        throw MenshenError.failed("can't find the menshen-launch stub next to this binary; build it with `swift build`")
+    }
+    let r = try Swap.replace(target, stub: stub, environment: .current())
+    say("replaced. Launcher: \(r.appPath)   original (untouched): \(r.hiddenPath)")
+    return 0
+}
+
+func runRestore(_ target: String) throws -> Int32 {
+    let r = try Swap.restore(target, environment: .current())
+    say("restored \(r.record.appPath). Signature \(r.signatureValid ? "valid" : "DOES NOT VERIFY")\(r.cdhashChanged ? "; the app changed while replaced (updated?)" : "").")
+    return r.signatureValid ? 0 : 70
+}
+
+func runSwaps() -> Int32 {
+    let records = Swap.records(.current())
+    if records.isEmpty { print("no replaced apps") }
+    for r in records { print("\(r.key)\t\(r.appPath)\t-> \(r.hiddenPath)") }
+    return 0
+}
+
 func runShow(_ p: Parsed, _ target: String) throws -> Int32 {
     var options = EnforceOptions(target: target)
     options.configPath = p.config
@@ -121,6 +149,7 @@ do {
         print(usage)
         exit(argv.isEmpty ? 64 : 0)
     }
+    if argv[0] == "swaps" { exit(runSwaps()) }
     if argv[0] == "--version" {
         print("menshen \(menshenVersion)")
         exit(0)
@@ -132,6 +161,8 @@ do {
     case "learn": status = try runLearn(p, target)
     case "enforce": status = try runEnforce(p, target)
     case "show": status = try runShow(p, target)
+    case "replace": status = try runReplace(target)
+    case "restore": status = try runRestore(target)
     default: throw MenshenError.usage("unknown command \(p.command)\n\n\(usage)")
     }
     exit(status)

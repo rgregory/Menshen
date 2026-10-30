@@ -1,5 +1,35 @@
 import Foundation
 
+/// Lets a caller (the GUI, the launcher) stop a running target. Safe to call from any thread,
+/// before or after the target starts.
+public final class StopHandle: @unchecked Sendable {
+    private let lock = NSLock()
+    private var requested = false
+    private var action: (() -> Void)?
+
+    public init() {}
+
+    public func stop() {
+        let run: (() -> Void)? = lock.withLock {
+            requested = true
+            return action
+        }
+        run?()
+    }
+
+    func attach(_ newAction: @escaping () -> Void) {
+        let already: Bool = lock.withLock {
+            action = newAction
+            return requested
+        }
+        if already { newAction() }
+    }
+
+    func detach() {
+        lock.withLock { action = nil }
+    }
+}
+
 /// Launches the target under a Seatbelt profile. All launching goes through here so the
 /// deprecated `sandbox-exec` can be swapped for another launcher later (ADR-001).
 public enum Runner {
@@ -9,15 +39,20 @@ public enum Runner {
         public var stoppedByMenshen: Bool
     }
 
-    /// Runs `executable` under `profile`, inheriting stdio. Ctrl-C / SIGTERM to Menshen are
-    /// forwarded to the target as SIGTERM so Menshen can finish reading the log afterwards.
-    /// `onLaunch` gets the pid (sandbox-exec execs into the target, so it is the target's pid).
-    /// `tick` runs every 100 ms while the target is alive.
+    /// Runs `executable` under `profile`, inheriting stdio.
+    /// - `forwardSignals`: Ctrl-C / SIGTERM to this process are forwarded to the target as
+    ///   SIGTERM so Menshen can finish reading the log afterwards. Only the CLI wants this; it
+    ///   changes process-wide signal handling, so the GUI and launcher pass false.
+    /// - `stop`: stops the target on request (SIGTERM, then SIGKILL after 5 s).
+    /// - `onLaunch` gets the pid (sandbox-exec execs into the target, so it is the target's pid).
+    /// - `tick` runs every 100 ms while the target is alive.
     public static func run(
         profile: URL,
         executable: String,
         arguments: [String],
         duration: TimeInterval?,
+        forwardSignals: Bool = true,
+        stop: StopHandle? = nil,
         onLaunch: (pid_t) -> Void,
         tick: @escaping @Sendable () -> Void
     ) throws -> Outcome {
@@ -27,21 +62,28 @@ public enum Runner {
 
         let stopped = StopFlag()
         let queue = DispatchQueue(label: "menshen.runner")
-        signal(SIGINT, SIG_IGN)
-        signal(SIGTERM, SIG_IGN)
+        var sources: [DispatchSourceSignal] = []
+        if forwardSignals {
+            signal(SIGINT, SIG_IGN)
+            signal(SIGTERM, SIG_IGN)
+            sources = [SIGINT, SIGTERM].map { sig in
+                let source = DispatchSource.makeSignalSource(signal: sig, queue: queue)
+                source.setEventHandler { terminate(child, stopped) }
+                source.resume()
+                return source
+            }
+        }
         defer {
-            signal(SIGINT, SIG_DFL)
-            signal(SIGTERM, SIG_DFL)
+            sources.forEach { $0.cancel() }
+            if forwardSignals {
+                signal(SIGINT, SIG_DFL)
+                signal(SIGTERM, SIG_DFL)
+            }
         }
-        let sources = [SIGINT, SIGTERM].map { sig -> DispatchSourceSignal in
-            let source = DispatchSource.makeSignalSource(signal: sig, queue: queue)
-            source.setEventHandler { stop(child, stopped) }
-            source.resume()
-            return source
-        }
-        defer { sources.forEach { $0.cancel() } }
 
         try child.run()
+        stop?.attach { terminate(child, stopped) }
+        defer { stop?.detach() }
         onLaunch(child.processIdentifier)
 
         let timer = DispatchSource.makeTimerSource(queue: queue)
@@ -51,7 +93,7 @@ public enum Runner {
         defer { timer.cancel() }
 
         if let duration {
-            queue.asyncAfter(deadline: .now() + duration) { stop(child, stopped) }
+            queue.asyncAfter(deadline: .now() + duration) { terminate(child, stopped) }
         }
         child.waitUntilExit()
         return Outcome(
@@ -62,7 +104,7 @@ public enum Runner {
     }
 
     /// SIGTERM now, SIGKILL if the target is still alive 5 s later.
-    private static func stop(_ child: Process, _ flag: StopFlag) {
+    private static func terminate(_ child: Process, _ flag: StopFlag) {
         guard child.isRunning else { return }
         flag.set()
         let pid = child.processIdentifier

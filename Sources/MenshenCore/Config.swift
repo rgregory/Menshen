@@ -1,7 +1,7 @@
 import CryptoKit
 import Foundation
 
-public let menshenVersion = "0.1.0"
+public let menshenVersion = "0.2.0"
 
 public enum RuleAction: String, Codable, Sendable {
     case allow
@@ -45,7 +45,7 @@ public struct Filter: Codable, Hashable, Sendable {
     public static let any = Filter(.any)
 }
 
-public struct Rule: Codable, Equatable, Sendable {
+public struct Rule: Codable, Equatable, Identifiable, Sendable {
     public var id: String
     public var action: RuleAction
     public var operations: [String]
@@ -138,6 +138,38 @@ public struct MenshenConfig: Codable, Equatable, Sendable {
         encoder.dateEncodingStrategy = .iso8601
         try FileManager.default.ensureDirectory(url.deletingLastPathComponent())
         try encoder.encode(self).write(to: url, options: .atomic)
+    }
+
+    /// The same config for the app at another location (a replaced app runs from its hidden
+    /// `.Name.menshen.app`): the target and every rule inside the old bundle move with it.
+    public func rebased(to newPath: String) -> MenshenConfig {
+        let old = target.path
+        guard old != newPath else { return self }
+        func move(_ path: String) -> String {
+            path == old ? newPath : path.hasPrefix(old + "/") ? newPath + path.dropFirst(old.count) : path
+        }
+        var copy = self
+        copy.target.path = newPath
+        copy.target.executable = move(target.executable)
+        copy.anchors = anchors.map(move)
+        for i in copy.rules.indices { copy.rules[i].filter.value = copy.rules[i].filter.value.map(move) }
+        for i in copy.hardening.indices { copy.hardening[i].filter.value = copy.hardening[i].filter.value.map(move) }
+        return copy
+    }
+
+    /// Writes the config, first keeping any previous version as `<name>.bak-<stamp>.json`.
+    /// Returns the backup's URL, if there was a previous version.
+    @discardableResult
+    public func save(to url: URL) throws -> URL? {
+        var backup: URL?
+        if FileManager.default.fileExists(atPath: url.path) {
+            let copy = url.deletingPathExtension().appendingPathExtension("bak-\(fileStamp()).json")
+            try? FileManager.default.removeItem(at: copy)
+            try FileManager.default.copyItem(at: url, to: copy)
+            backup = copy
+        }
+        try write(to: url)
+        return backup
     }
 
     /// Carries the user's edits (actions, logging toggles) from `previous` into a regenerated config.

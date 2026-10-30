@@ -73,6 +73,24 @@ import Testing
         #expect(regenerated.logging.exec == false)
     }
 
+    @Test func rebasedMovesOwnBundleRulesOnly() throws {
+        let config = Learn.build(target: fooTarget, events: [
+            allow("file-read-data", "/Applications/Foo.app/Contents/Info.plist"),
+            allow("file-read-data", "/Applications/Foobar.app/x"),
+            allow("mach-lookup", "com.apple.x"),
+        ], environment: env)
+        let moved = config.rebased(to: "/Applications/.Foo.menshen.app")
+        #expect(moved.target.path == "/Applications/.Foo.menshen.app")
+        #expect(moved.target.executable == "/Applications/.Foo.menshen.app/Contents/MacOS/Foo")
+        #expect(moved.rules.contains { $0.filter.value == "/Applications/.Foo.menshen.app" })
+        #expect(!moved.rules.contains { $0.filter.value == "/Applications/Foo.app" })
+        #expect(moved.rules.contains { $0.filter.value == "/Applications" || $0.filter.value == "/Applications/Foobar.app/x" },
+                "a sibling app with the same prefix must not move")
+        #expect(moved.rules.map(\.id) == config.rules.map(\.id), "IDs stay stable so edits are kept")
+        let text = ProfileCompiler(environment: env).compile(moved)
+        #expect(text.contains("(allow process-exec* (subpath \"/Applications/.Foo.menshen.app\")"))
+    }
+
     @Test func configRoundTrips() throws {
         let url = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("menshen-\(UUID()).json")
         defer { try? FileManager.default.removeItem(at: url) }
