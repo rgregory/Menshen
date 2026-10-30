@@ -110,6 +110,7 @@ func allow(_ op: String, _ target: String, count: Int = 1) -> SandboxEvent {
         let c = build([
             allow("mach-lookup", "com.apple.windowserver.active"),
             allow("mach-lookup", "com.apple.coredrag (per-pid)"),
+            allow("mach-lookup", "com.example.renderer (xpc)"),
             allow("user-preference-read", "com.apple.hitoolbox"),
             allow("iokit-open-user-client", "IOSurfaceRootUserClient"),
             allow("network-outbound", "remote:*:443"),
@@ -119,6 +120,7 @@ func allow(_ op: String, _ target: String, count: Int = 1) -> SandboxEvent {
         ])
         #expect(learned(c, "mach-lookup", .globalName, "com.apple.windowserver.active") != nil)
         #expect(learned(c, "mach-lookup", .localName, "com.apple.coredrag") != nil)
+        #expect(learned(c, "mach-lookup", .xpcServiceName, "com.example.renderer") != nil, "(xpc) lookups are XPC services")
         #expect(learned(c, "user-preference-read", .preferenceDomain, "com.apple.hitoolbox") != nil)
         #expect(learned(c, "iokit-open-user-client", .iokitUserClientClass, "IOSurfaceRootUserClient") != nil)
         #expect(learned(c, "network-outbound", .remote, "*:443")?.category == .network)

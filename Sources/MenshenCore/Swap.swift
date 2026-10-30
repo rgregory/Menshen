@@ -35,6 +35,11 @@ public enum Swap {
         return url.deletingLastPathComponent().appendingPathComponent(".\(name).menshen.app").path
     }
 
+    /// The app a path really means: for a Menshen launcher, its hidden original; otherwise the path itself.
+    public static func resolveOriginal(_ path: String) -> String {
+        launcherInfo(realPath(path))?["original"] ?? path
+    }
+
     public static func isLauncher(_ path: String) -> Bool {
         launcherInfo(path) != nil
     }

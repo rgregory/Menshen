@@ -109,6 +109,9 @@ public struct Generalizer {
                 if name.hasSuffix(" (per-pid)") {
                     name = String(name.dropLast(" (per-pid)".count))
                     kind = .localName
+                } else if name.hasSuffix(" (xpc)") {
+                    name = String(name.dropLast(" (xpc)".count))
+                    kind = .xpcServiceName
                 }
                 record([op], name.isEmpty ? .any : Filter(kind, name), nil, event.count)
             case "user-preference-read", "user-preference-write":

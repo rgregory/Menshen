@@ -2,5 +2,6 @@
 
 | File | Source | License |
 |---|---|---|
-| `AppIcon.svg` | "Action_Logout" from Haiku icons: https://github.com/darealshinji/haiku-icons (`svg/Action_Logout.svg`) | MIT, Copyright (c) 2007-2026 Haiku, Inc. Full text in `LICENSE-haiku-icons.txt`, which is also bundled into Menshen.app. |
-| `AppIcon.png` | `AppIcon.svg` rendered at 1024×1024: `swiftc scripts/svg2png.swift -o /tmp/svg2png && /tmp/svg2png assets/AppIcon.svg assets/AppIcon.png 1024` | same as above |
+| `AppIcon.png` | Archway logo image from Pinterest: https://i.pinimg.com/474x/3e/7a/6b/3e7a6b7153c03cbcb581f6ddf9aadc73.jpg (400×300 JPEG; original designer unknown). The arch was cropped, upscaled, snapped to clean white on #AD6836, and placed on the macOS 1024 px icon shape. | **Unknown.** It's fine on your own Mac. Before distributing Menshen, find the designer and get permission, or replace this with an original icon. |
+
+The previous icon (Haiku "Action_Logout" padlock, MIT) is in git history (commit cf228da).

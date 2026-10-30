@@ -23,6 +23,22 @@ All notable changes are documented here.
   - `AccessSummary` / `RuleText` / `BlockedSummary` (plain-language summaries)
 - Tests: 44 in total. They cover swap round trip, refusals, rollback (mutation-checked), never deleting a foreign bundle, the end-to-end launcher via LaunchServices with a dummy app, `Library`, and the summaries.
 
+### Added after the first 0.2.0 commit
+- **Your rules** (`menshen allow`, Config → Add Permission…): read or read & write every file of some types (`mp4 mkv`, matched in any letter case with a both-cases regex, since SBPL ignores `(?i)`), or a folder. Compiled after learned rules and before hardening, so protected locations still win. Kept on re-learn.
+- **Compact, auditable profiles:**
+  - same-action, same-operation rules merge into one statement
+  - learned entries covered by always-on rules are left out
+  - no per-rule comments (they stay in the JSON)
+  - within a section, allows come before denies
+
+  The real VLC profile went from 170+ to 97 lines; the permissions are unchanged, and the integration and kernel tests still pass.
+- New app icon: an archway (source and license caveat in `assets/ATTRIBUTION.md`).
+
+### Fixed after the first 0.2.0 commit
+- Commands given a replaced app's normal path (the launcher) looked up the launcher's own identity. Learn, enforce, show and allow now go to the hidden original and its config.
+- Captures recorded while an app was replaced produced rules for the hidden `.Name.menshen.app` path after a Restore and re-learn. Captures are now normalized to the normal path.
+- Learned `mach-lookup X (xpc)` reports become `(xpc-service-name "X")`, not a global name with " (xpc)" in it.
+
 ### Verified on a real app
 - VLC (with the user's OK):
   - replace → open with a document via LaunchServices → VLC ran from the hidden original under the profile (0 denials) → quit → restore gave the identical cdhash, deep codesign OK and a Gatekeeper pass → replaced again.

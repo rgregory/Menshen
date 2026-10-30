@@ -36,6 +36,7 @@ enum RuleFilter: String, CaseIterable, Identifiable {
     case flagged = "Flagged"
     case learned = "Learned"
     case hardening = "Hardening"
+    case yours = "Yours"
     var id: String { rawValue }
 }
 
@@ -81,6 +82,12 @@ final class AppStore {
     var ruleFilter: RuleFilter = .all
     var ruleSearch = ""
     var profileText: String?
+
+    // Add Permission sheet
+    var addingPermission = false
+    var newAccess: CustomAccess = .read
+    var newIsFolder = false
+    var newValue = ""
 
     // Replace / Restore confirmation
     var confirmingReplace = false
@@ -279,6 +286,7 @@ final class AppStore {
             case .flagged: kept = rule.flagged == true
             case .learned: kept = rule.source == .learned
             case .hardening: kept = rule.source == .hardening
+            case .yours: kept = rule.source == .custom
             }
             return kept && (search.isEmpty || rule.id.lowercased().contains(search)
                 || (rule.filter.value ?? "").lowercased().contains(search)
@@ -306,6 +314,34 @@ final class AppStore {
 
     func revert(_ key: String) {
         drafts[key] = entries.first { $0.id == key }?.config
+    }
+
+    func addPermission(_ key: String) {
+        guard var draft = drafts[key] else { return }
+        do {
+            if newIsFolder {
+                guard !newValue.isEmpty else { throw MenshenError.usage("choose a folder") }
+                draft.addCustom(newAccess, folder: newValue, environment: environment)
+            } else {
+                draft.addCustom(newAccess, fileTypes: try MenshenConfig.fileExtensions(newValue))
+            }
+            drafts[key] = draft
+            addingPermission = false
+            newValue = ""
+        } catch {
+            message = "\(error)"
+        }
+    }
+
+    func removeCustom(_ key: String, ruleID: String) {
+        drafts[key]?.removeCustom(ruleID)
+    }
+
+    func chooseFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        if panel.runModal() == .OK, let url = panel.url { newValue = url.path }
     }
 
     func showProfile(_ key: String) {

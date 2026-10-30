@@ -24,6 +24,7 @@ struct ConfigView: View {
                 }
                 .frame(width: 200)
                 TextField("Search rules", text: Bindable(store).ruleSearch)
+                Button("Add Permission…") { store.addingPermission = true }
                 Button("Show Profile") { store.showProfile(key) }
                 Button("Revert") { store.revert(key) }.disabled(!dirty)
                 Button("Save") { store.save(key) }.disabled(!dirty).keyboardShortcut("s")
@@ -47,7 +48,7 @@ struct ConfigView: View {
                 TableColumn("Access") { rule in AccessBadge(text: RuleText.access(rule.operations)) }
                     .width(min: 80, ideal: 90)
                 TableColumn("Source") { rule in
-                    Text(rule.source == .hardening ? "protection" : "learned").font(.caption).foregroundStyle(.secondary)
+                    Text(rule.source == .hardening ? "protection" : rule.source == .custom ? "yours" : "learned").font(.caption).foregroundStyle(.secondary)
                 }
                 .width(min: 60, ideal: 70)
                 TableColumn("Seen") { rule in Text(rule.seen > 0 ? "\(rule.seen)" : "").monospacedDigit() }
@@ -56,6 +57,14 @@ struct ConfigView: View {
                     Text(note(rule)).font(.caption).foregroundStyle(.secondary).lineLimit(2).help(rule.note ?? "")
                 }
                 .width(min: 120, ideal: 220)
+                TableColumn("") { rule in
+                    if rule.source == .custom {
+                        Button { store.removeCustom(key, ruleID: rule.id) } label: { Image(systemName: "trash") }
+                            .buttonStyle(.borderless)
+                            .help("Remove this rule of yours")
+                    }
+                }
+                .width(28)
             }
             if dirty {
                 Text("Unsaved changes. Save writes a backup of the previous config first.")
@@ -63,6 +72,7 @@ struct ConfigView: View {
             }
         }
         .padding()
+        .sheet(isPresented: Bindable(store).addingPermission) { AddPermissionSheet(store: store, key: key) }
         .sheet(isPresented: Binding(get: { store.profileText != nil }, set: { if !$0 { store.profileText = nil } })) {
             VStack(alignment: .leading) {
                 Text("Compiled Seatbelt profile").font(.headline)
@@ -105,5 +115,47 @@ struct ConfigView: View {
         Toggle(title, isOn: Binding(
             get: { store.drafts[key]?.logging[keyPath: path] ?? true },
             set: { store.drafts[key]?.logging[keyPath: path] = $0 }))
+    }
+}
+
+/// "Add Permission…": a broad rule of your own — file types anywhere, or a folder.
+struct AddPermissionSheet: View {
+    let store: AppStore
+    let key: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Add a permission").font(.headline)
+            Picker("Allow", selection: Bindable(store).newAccess) {
+                ForEach(CustomAccess.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            Picker("For", selection: Bindable(store).newIsFolder) {
+                Text("File types").tag(false)
+                Text("A folder").tag(true)
+            }
+            .pickerStyle(.segmented)
+            if store.newIsFolder {
+                HStack {
+                    TextField("Folder", text: Bindable(store).newValue)
+                    Button("Choose…") { store.chooseFolder() }
+                }
+                Text("Everything inside this folder.").font(.caption).foregroundStyle(.secondary)
+            } else {
+                TextField("e.g. mp4, mkv, mov", text: Bindable(store).newValue)
+                Text("Every file with these extensions, anywhere, in any letter case.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Text("Protected locations (like ~/.ssh and other apps' data) stay blocked either way. Save the config to apply.")
+                .font(.caption).foregroundStyle(.secondary)
+            HStack {
+                Spacer()
+                Button("Cancel") { store.addingPermission = false }.keyboardShortcut(.cancelAction)
+                Button("Add") { store.addPermission(key) }.keyboardShortcut(.defaultAction)
+                    .disabled(store.newValue.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+        .padding()
+        .frame(width: 440)
     }
 }

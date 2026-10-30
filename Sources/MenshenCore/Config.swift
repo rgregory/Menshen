@@ -11,6 +11,8 @@ public enum RuleAction: String, Codable, Sendable {
 public enum RuleSource: String, Codable, Sendable {
     case learned
     case hardening
+    /// Added by the user (e.g. "read all .mp4 files"). Kept when the app is re-learned.
+    case custom
 }
 
 /// Risky allows that are compiled `(with report)` so they show up in the enforce log.
@@ -25,11 +27,15 @@ public enum FilterKind: String, Codable, Sendable {
     case subpath
     case literal
     case globalName = "global-name"
+    /// An XPC service, reported by the kernel as "mach-lookup <name> (xpc)".
+    case xpcServiceName = "xpc-service-name"
     case localName = "local-name"
     case remote
     case local
     case preferenceDomain = "preference-domain"
     case iokitUserClientClass = "iokit-user-client-class"
+    /// Comma-separated file extensions ("mp4,mkv"), matched anywhere, in any letter case.
+    case fileTypes = "file-types"
 }
 
 public struct Filter: Codable, Hashable, Sendable {
@@ -179,5 +185,67 @@ public struct MenshenConfig: Codable, Equatable, Sendable {
                                  uniquingKeysWith: { first, _ in first })
         for i in rules.indices { if let a = actions[rules[i].id] { rules[i].action = a } }
         for i in hardening.indices { if let a = actions[hardening[i].id] { hardening[i].action = a } }
+    }
+}
+
+// MARK: - Your rules (broad permissions added by the user)
+
+public enum CustomAccess: String, CaseIterable, Sendable {
+    case read = "Read"
+    case readWrite = "Read & write"
+
+    var operations: [String] { self == .read ? ["file-read*"] : ["file-read*", "file-write*"] }
+}
+
+extension MenshenConfig {
+    /// "*.mp4, .mkv mov" → ["mp4", "mkv", "mov"]. Extensions are letters and digits only, so they
+    /// can be compiled into an SBPL regex safely.
+    public static func fileExtensions(_ text: String) throws -> [String] {
+        let words = text.split(whereSeparator: { " ,;".contains($0) }).map { word -> String in
+            var w = Substring(word)
+            if w.hasPrefix("*") { w = w.dropFirst() }
+            if w.hasPrefix(".") { w = w.dropFirst() }
+            return w.lowercased()
+        }
+        guard !words.isEmpty else { throw MenshenError.usage("no file types given (e.g. mp4 mkv)") }
+        for w in words where w.isEmpty || w.count > 16 || !w.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber) }) {
+            throw MenshenError.usage("\"\(w)\" isn't a file type; use letters and digits, like mp4 or mkv")
+        }
+        var seen = Set<String>()
+        return words.filter { seen.insert($0).inserted }
+    }
+
+    /// Allows reading (or reading and writing) every file with these extensions, anywhere.
+    /// Hardening still wins: a matching file in ~/.ssh stays blocked.
+    @discardableResult
+    public mutating func addCustom(_ access: CustomAccess, fileTypes: [String]) -> Rule {
+        add(Rule(action: .allow, operations: access.operations,
+                 filter: Filter(.fileTypes, fileTypes.joined(separator: ",")), source: .custom,
+                 note: "Added by you."))
+    }
+
+    /// Allows reading (or reading and writing) everything inside a folder.
+    @discardableResult
+    public mutating func addCustom(_ access: CustomAccess, folder: String, environment: MenshenEnvironment) -> Rule {
+        let path = environment.abbreviate(realPath(environment.expand(folder)))
+        return add(Rule(action: .allow, operations: access.operations, filter: Filter(.subpath, path),
+                        source: .custom, category: access == .readWrite ? .writeOutside : nil,
+                        note: "Added by you."))
+    }
+
+    /// Removes one of your rules. Learned and hardening rules can only be switched off, not removed.
+    @discardableResult
+    public mutating func removeCustom(_ id: String) -> Bool {
+        let before = rules.count
+        rules.removeAll { $0.id == id && $0.source == .custom }
+        return rules.count < before
+    }
+
+    private mutating func add(_ rule: Rule) -> Rule {
+        var rule = rule
+        rule.id = "C-" + rule.id.dropFirst(2)
+        if let existing = rules.first(where: { $0.id == rule.id }) { return existing }
+        rules.append(rule)
+        return rule
     }
 }

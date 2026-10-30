@@ -53,6 +53,8 @@ public enum RuleText {
     public static func object(_ filter: Filter) -> String {
         guard let value = filter.value else { return "" }
         switch filter.kind {
+        case .fileTypes:
+            return "all " + value.split(separator: ",").map { ".\($0)" }.joined(separator: ", ") + " files"
         case .remote, .local:
             let port = String(value.split(separator: ":").last ?? "")
             let host = value.hasPrefix("localhost") ? " on this Mac" : ""
@@ -108,6 +110,10 @@ public struct AccessSummary: Sendable {
             groups[title] = g
         }
         for rule in allowed where !Set(rule.operations).isDisjoint(with: fileOps) {
+            if rule.filter.kind == .fileTypes {
+                add(RuleText.object(rule.filter).prefix(1).uppercased() + RuleText.object(rule.filter).dropFirst(), "anywhere (added by you)", rule.operations, 3)
+                continue
+            }
             guard let raw = rule.filter.value else { add("Any file", "", rule.operations, 9); continue }
             let path = environment.expand(raw)
             let short = environment.abbreviate(path)

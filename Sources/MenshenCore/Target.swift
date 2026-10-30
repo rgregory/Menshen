@@ -65,6 +65,19 @@ public struct ResolvedTarget: Sendable {
         )
     }
 
+    /// The same app described at another location (its identity and signature don't change).
+    func moved(to path: String) -> ResolvedTarget {
+        let old = identity.path
+        guard path != old else { return self }
+        var copy = self
+        copy.identity.path = path
+        if identity.executable.hasPrefix(old + "/") {
+            copy.identity.executable = path + identity.executable.dropFirst(old.count)
+        }
+        if bundlePath != nil { copy.bundlePath = path }
+        return copy
+    }
+
     /// The cdhash of the code at `path`, or nil if unsigned.
     public static func signingCdhash(_ path: String) -> String? {
         SigningInfo.read(URL(fileURLWithPath: path)).cdhash

@@ -132,6 +132,34 @@ struct DummyApps {
         #expect(Swap.records(d.env).isEmpty)
     }
 
+    /// Pointing commands at a replaced app's normal path (now the launcher) must reach the app's
+    /// own config, and learning through it must store the normal path, never the hidden one.
+    @Test func launcherPathMeansTheOriginalApp() throws {
+        defer { d.cleanUp() }
+        let doc = d.root + "/doc.txt"
+        try "x".write(toFile: doc, atomically: true, encoding: .utf8)
+        var learn = LearnOptions(target: d.app)
+        learn.arguments = [doc]
+        _ = try Learn.run(learn, environment: d.env)
+        let configURL = d.env.configURL(d.bundleId)
+        var config = try MenshenConfig.load(configURL)
+        config.addCustom(.read, fileTypes: ["mp4"])
+        try config.save(to: configURL)
+
+        try Swap.replace(d.app, stub: d.stub, environment: d.env)
+        defer { _ = try? Swap.restore(d.bundleId, environment: d.env) }
+        #expect(try Enforce.locateConfig(EnforceOptions(target: d.app), environment: d.env).0 == configURL)
+
+        learn.merge = true   // merges a capture from before the swap with one from the hidden original
+        _ = try Learn.run(learn, environment: d.env)
+        let relearned = try MenshenConfig.load(configURL)
+        #expect(relearned.target.path == d.app)
+        #expect(relearned.learning.runs == 2)
+        let json = try String(contentsOf: configURL, encoding: .utf8)
+        #expect(!json.contains(".menshen.app"), "no rule may point at the hidden location")
+        #expect(relearned.rules.contains { $0.source == .custom }, "your rules survive re-learning")
+    }
+
     @Test func restoreNeverDeletesSomethingThatIsntItsLauncher() throws {
         defer { d.cleanUp() }
         try d.writeConfig()

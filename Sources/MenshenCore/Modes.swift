@@ -54,7 +54,7 @@ public enum Learn {
         environment: MenshenEnvironment = .current(),
         say: @escaping @Sendable (String) -> Void = { _ in }
     ) throws -> LearnSummary {
-        let target = try ResolvedTarget.resolve(options.target)
+        let target = try ResolvedTarget.resolve(Swap.resolveOriginal(options.target))
         try target.preflight()
         let key = target.identity.key
         let fm = FileManager.default
@@ -99,17 +99,28 @@ public enum Learn {
             captures = previous.learning.captures + captures
             runs = previous.learning.runs + 1
         }
+        // Configs always describe the app at its normal location. Captures recorded while it was
+        // replaced (running from `.Name.menshen.app`) are mapped back, so merging captures from
+        // before and after a Replace/Restore gives the same rules.
+        let normalPath = Swap.records(environment).first { $0.hiddenPath == target.identity.path }?.appPath
+            ?? target.identity.path
+        let hidden = Swap.hiddenPath(for: normalPath)
         var events: [SandboxEvent] = []
         for path in captures {
             events += (try? readCapture(URL(fileURLWithPath: path))) ?? []
         }
+        events = events.map { event in
+            var event = event
+            event.target = event.target.replacingOccurrences(of: hidden, with: normalPath)
+            return event
+        }
 
-        var config = build(target: target, events: events, environment: environment,
+        var config = build(target: target.moved(to: normalPath), events: events, environment: environment,
                            runs: runs, captures: captures, warnings: warnings)
-        // Learning a replaced app runs its hidden original; store the app's normal location so
-        // the config stays valid after Restore.
-        if let swap = Swap.records(environment).first(where: { $0.hiddenPath == target.identity.path }) {
-            config = config.rebased(to: swap.appPath)
+        // Your rules are your intent, not observations: keep them whether or not this is a merge.
+        if let previous {
+            let ids = Set(config.rules.map(\.id))
+            config.rules += previous.rules.filter { $0.source == .custom && !ids.contains($0.id) }
         }
         if let previous, options.merge {
             config.keepEdits(from: previous)
@@ -152,7 +163,7 @@ public enum Enforce {
         } else if options.target.hasSuffix(".json") {
             url = URL(fileURLWithPath: options.target)
         } else {
-            url = environment.configURL(try ResolvedTarget.resolve(options.target).identity.key)
+            url = environment.configURL(try ResolvedTarget.resolve(Swap.resolveOriginal(options.target)).identity.key)
         }
         guard FileManager.default.fileExists(atPath: url.path) else {
             throw MenshenError.usage("no config at \(url.path). Run `menshen learn \(options.target)` first.")
@@ -166,7 +177,7 @@ public enum Enforce {
         say: @escaping @Sendable (String) -> Void = { _ in }
     ) throws -> EnforceSummary {
         let (configURL, stored) = try locateConfig(options, environment: environment)
-        let targetPath = options.target.hasSuffix(".json") ? stored.target.path : options.target
+        let targetPath = Swap.resolveOriginal(options.target.hasSuffix(".json") ? stored.target.path : options.target)
         let target = try ResolvedTarget.resolve(targetPath)
         try target.preflight()
         try checkIdentity(expected: stored.target, actual: target.identity, allowChanged: options.allowChanged, say: say)

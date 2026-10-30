@@ -23,6 +23,18 @@ open build/Menshen.app
 
 Add apps with **+** or by dropping them on the sidebar.
 
+## Your rules: broad permissions
+
+Learning only allows what the app did. To allow a whole class of files or a folder up front:
+
+```sh
+menshen allow /Applications/VLC.app mp4 mkv mov          # read every .mp4/.mkv/.mov anywhere, any letter case
+menshen allow /Applications/VLC.app ~/Movies --write     # read and write everything in ~/Movies
+menshen allow /Applications/VLC.app --remove C-1a2b3c4d  # remove one of your rules
+```
+
+The same is in the app: Config → **Add Permission…**. Your rules come after the learned rules but **before the protections**, so `~/.ssh/key.mp4` stays blocked. They survive re-learning.
+
 ## Replacing an app
 
 `menshen replace /Applications/VLC.app` (or **Replace…** in the app):
@@ -64,7 +76,7 @@ menshen swaps
 
 Each rule has an `action` (`allow`/`deny`), its `operations`, a `filter`, how often learning `seen` it, and a `note`. To permit something flagged, change its `action` to `"allow"`. `logging` switches the reported categories (`denials`, `network`, `exec`, `writeOutside`) on or off.
 
-The compiled order is: deny default + `system.sb` → always-on rules (the app's own bundle, own preferences, Apple services and preferences) → learned rules → hardening → `(deny file-link)`. In SBPL a later matching rule wins, which a test checks against the real kernel. So hardening overrides broader learned allows, and a hardening rule you flip to `allow` takes effect.
+The compiled profile is kept short and auditable. Rules with the same action and operations become one statement, and IDs and counts stay in the JSON. Order: deny default + `system.sb` → always-on rules (the app's own bundle, own preferences, Apple services and preferences) → learned rules → your rules → hardening → `(deny file-link)`. Within each section, allows come first and denies after, so a rule you switch off wins. In SBPL a later matching rule wins, which a test checks against the real kernel. So hardening overrides broader learned allows, and a hardening rule you flip to `allow` takes effect.
 
 ## How it works
 
@@ -87,6 +99,7 @@ Design records: [`docs/DECISIONS.md`](docs/DECISIONS.md). Platform research: [`d
 - **Network rules can't name hosts.** SBPL only accepts `*` or `localhost`, so rules work by port.
 - **Reports from processes that exit within milliseconds** of an operation are sometimes dropped by the kernel. In testing, 12 of 20 were kept, versus 20 of 20 when the process stayed alive 300 ms. Enforcement is unaffected; logging and learning of very short-lived helpers are best-effort.
 - Privacy prompts (camera, Full Disk Access…) may name the terminal app instead of the wrapped app.
+- **A launcher keeps the Menshen version it was made with.** After rebuilding Menshen, refresh a replaced app with Restore and then Replace.
 - `sandbox-exec` is deprecated and `system.sb` is a private interface. Re-test after every macOS update.
 - **While replaced:** the Dock may show a second icon while the app runs, because the running process belongs to the hidden original. Routing documents and "Open with" to the launcher is best-effort. The app's updater updates the hidden original, after which enforce refuses until the app is re-learned. macOS App Management protection may need to allow Menshen to rename apps.
 - Threat model: Menshen protects against a compromised *app*, not a compromised user account. Configs are user-writable.

@@ -8,6 +8,8 @@ let usage = """
       menshen learn   <App.app | binary> [--duration 10m] [--merge] [--config PATH] [-- app-args…]
       menshen enforce <App.app | binary | config.json> [--duration 10m] [--config PATH] [--allow-changed] [-- app-args…]
       menshen show    <App.app | binary | config.json> [--config PATH]
+      menshen allow   <App.app | config.json> [--write] TYPES… | FOLDER…   e.g. allow VLC.app mp4 mkv
+      menshen allow   <App.app | config.json> --remove RULE-ID
       menshen replace <App.app>       swap the app for a launcher that always runs it under enforce
       menshen restore <App.app | bundle-id>
       menshen swaps                   list replaced apps
@@ -18,6 +20,8 @@ let usage = """
     enforce  Run the app under the config. Denials and risky allows (network, process
              launches, writes outside the app's folders) go to a JSONL log.
     show     Print the SBPL profile the config compiles to.
+    allow    Add a broad permission of your own: every file of some types (mp4 mkv), or a
+             folder (~/Movies). Read only unless --write. Protected locations stay blocked.
     replace  Rename the app to a hidden .Name.menshen.app (untouched) and put a launcher with
              its name and icon in its place, so Dock/Finder/Spotlight run it under enforce.
     restore  Remove the launcher and put the original back.
@@ -38,6 +42,9 @@ struct Parsed {
     var merge = false
     var allowChanged = false
     var config: URL?
+    var extra: [String] = []
+    var write = false
+    var remove: String?
 }
 
 func parseDuration(_ text: String) throws -> TimeInterval {
@@ -65,8 +72,16 @@ func parse(_ argv: [String]) throws -> Parsed {
             p.config = URL(fileURLWithPath: (v as NSString).expandingTildeInPath)
         case "--merge": p.merge = true
         case "--allow-changed": p.allowChanged = true
+        case "--write": p.write = true
+        case "--remove":
+            guard let v = args.popFirst() else { throw MenshenError.usage("--remove needs a rule ID") }
+            p.remove = v
         default:
             if arg.hasPrefix("--") { throw MenshenError.usage("unknown option \(arg)") }
+            if p.target != nil, p.command == "allow" {
+                p.extra.append(arg)
+                continue
+            }
             guard p.target == nil else { throw MenshenError.usage("unexpected argument \(arg) (put app arguments after --)") }
             p.target = (arg as NSString).expandingTildeInPath
         }
@@ -110,6 +125,41 @@ func runEnforce(_ p: Parsed, _ target: String) throws -> Int32 {
     if s.streamNotices > 0 { say("note: log stream reported \(s.streamNotices) notice(s), possibly dropped messages.") }
     if s.outcome.stoppedByMenshen { return 0 }
     return s.outcome.wasSignaled ? 128 + s.outcome.status : s.outcome.status
+}
+
+func runAllow(_ p: Parsed, _ target: String) throws -> Int32 {
+    var options = EnforceOptions(target: target)
+    options.configPath = p.config
+    let env = MenshenEnvironment.current()
+    let (url, stored) = try Enforce.locateConfig(options, environment: env)
+    var config = stored
+    if let id = p.remove {
+        guard config.removeCustom(id) else { throw MenshenError.usage("no rule of yours with ID \(id)") }
+        try config.save(to: url)
+        say("removed \(id). Saved \(url.path)")
+        return 0
+    }
+    guard !p.extra.isEmpty else {
+        throw MenshenError.usage("allow needs file types or a folder, e.g.  menshen allow \(target) mp4 mkv")
+    }
+    // Folders start with /, ~ or ./ ; anything else is a file type (mp4, .mkv, *.mov).
+    let isFolder = { (s: String) in s.hasPrefix("/") || s.hasPrefix("~") || s.hasPrefix("./") }
+    let access: CustomAccess = p.write ? .readWrite : .read
+    var added: [Rule] = []
+    let types = p.extra.filter { !isFolder($0) }
+    if !types.isEmpty {
+        added.append(config.addCustom(access, fileTypes: try MenshenConfig.fileExtensions(types.joined(separator: " "))))
+    }
+    for folder in p.extra where isFolder(folder) {
+        added.append(config.addCustom(access, folder: folder, environment: env))
+    }
+    if let error = ProfileCompiler.validate(ProfileCompiler(environment: env).compile(config)) {
+        throw MenshenError.failed("the new rule doesn't compile, nothing saved:\n\(error)")
+    }
+    try config.save(to: url)
+    for rule in added { say("\(rule.id): \(RuleText.describe(rule))") }
+    say("saved \(url.path). Protected locations (like ~/.ssh) stay blocked.")
+    return 0
 }
 
 func runReplace(_ target: String) throws -> Int32 {
@@ -161,6 +211,7 @@ do {
     case "learn": status = try runLearn(p, target)
     case "enforce": status = try runEnforce(p, target)
     case "show": status = try runShow(p, target)
+    case "allow": status = try runAllow(p, target)
     case "replace": status = try runReplace(target)
     case "restore": status = try runRestore(target)
     default: throw MenshenError.usage("unknown command \(p.command)\n\n\(usage)")

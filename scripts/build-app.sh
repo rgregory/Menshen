@@ -23,8 +23,7 @@ cp "$BIN/MenshenApp" "$APP/Contents/MacOS/Menshen"
 cp "$BIN/menshen-launch" "$APP/Contents/Resources/menshen-launch"
 cp "$BIN/menshen" "$APP/Contents/Resources/menshen"
 
-# App icon from assets/AppIcon.png: 1024x1024, rendered from assets/AppIcon.svg (Haiku "Action_Logout", MIT —
-# see assets/ATTRIBUTION.md), so every size is downscaled and sharp.
+# App icon from assets/AppIcon.png (1024x1024; source and license caveat in assets/ATTRIBUTION.md).
 ICONSET=build/AppIcon.iconset
 rm -rf "$ICONSET"
 mkdir -p "$ICONSET"
@@ -33,7 +32,6 @@ for s in 16 32 128 256 512; do
     sips -z "$((s * 2))" "$((s * 2))" assets/AppIcon.png --out "$ICONSET/icon_${s}x${s}@2x.png" >/dev/null
 done
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
-cp assets/LICENSE-haiku-icons.txt "$APP/Contents/Resources/"
 
 cat > "$APP/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
