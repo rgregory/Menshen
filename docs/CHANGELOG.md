@@ -23,6 +23,13 @@ All notable changes are documented here.
   - `AccessSummary` / `RuleText` / `BlockedSummary` (plain-language summaries)
 - Tests: 44 in total. They cover swap round trip, refusals, rollback (mutation-checked), never deleting a foreign bundle, the end-to-end launcher via LaunchServices with a dummy app, `Library`, and the summaries.
 
+### Added: category presets
+- `menshen allow <app> media | images | documents`, also a Category option in Add Permission.
+  - Membership follows macOS's UTType classification and is stored as an auditable extension list.
+  - Documents leave out code, scripts and config.
+  - `.ts` and `.key` are left out (TypeScript source and private keys).
+- Your-rule regexes are now readable (`mp4|MP4`), not character classes. Any case mix still matches on case-insensitive volumes (kernel-tested).
+
 ### Added after the first 0.2.0 commit
 - **Your rules** (`menshen allow`, Config → Add Permission…): read or read & write every file of some types (`mp4 mkv`, matched in any letter case with a both-cases regex, since SBPL ignores `(?i)`), or a folder. Compiled after learned rules and before hardening, so protected locations still win. Kept on re-learn.
 - **Compact, auditable profiles:**

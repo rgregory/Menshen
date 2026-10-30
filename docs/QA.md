@@ -33,7 +33,9 @@ Still under **Enforce**, do something you did *not* do while learning:
 - Open a media file from `~/Downloads` (or any folder you didn't use in step 1).
 - Or VLC → File → Save Playlist… to `~/Desktop`.
 
-**Expect:** VLC can't open or save the file, and Menshen shows it in "Blocked just now" (e.g. `Read ~/Downloads/clip.mp4`). That's the sandbox working. To allow it, run **Learn** again with "Merge" on while doing that action.
+**Expect:** VLC can't open or save the file, and Menshen shows it in "Blocked just now" (e.g. `Read ~/Downloads/clip.mp4`). That's the sandbox working.
+
+To allow it, use Config → **Add Permission…** → Category → **Media**, then Save. Run Enforce again: the file now opens. A text or `.json` file from the same folder still doesn't.
 
 ## 4. Replaced: launch the normal way
 

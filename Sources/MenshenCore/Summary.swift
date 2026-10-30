@@ -65,6 +65,9 @@ public enum RuleText {
     }
 
     public static func describe(_ rule: Rule) -> String {
+        if let label = rule.label, let category = FileCategory(rawValue: label) {
+            return "\(verb(rule.operations)) all \(category.noun)"
+        }
         let object = object(rule.filter)
         if rule.operations == ["network-outbound"], rule.filter.kind == .literal,
            rule.filter.value == "/private/var/run/mDNSResponder" {
@@ -111,7 +114,13 @@ public struct AccessSummary: Sendable {
         }
         for rule in allowed where !Set(rule.operations).isDisjoint(with: fileOps) {
             if rule.filter.kind == .fileTypes {
-                add(RuleText.object(rule.filter).prefix(1).uppercased() + RuleText.object(rule.filter).dropFirst(), "anywhere (added by you)", rule.operations, 3)
+                let types = (rule.filter.value ?? "").split(separator: ",").map { ".\($0)" }
+                if let label = rule.label, let category = FileCategory(rawValue: label) {
+                    let shown = types.prefix(6).joined(separator: ", ") + (types.count > 6 ? " +\(types.count - 6) more" : "")
+                    add("All \(category.noun)", "anywhere (added by you): \(shown)", rule.operations, 3)
+                } else {
+                    add("All " + types.joined(separator: ", ") + " files", "anywhere (added by you)", rule.operations, 3)
+                }
                 continue
             }
             guard let raw = rule.filter.value else { add("Any file", "", rule.operations, 9); continue }

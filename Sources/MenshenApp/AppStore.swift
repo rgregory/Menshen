@@ -31,6 +31,13 @@ enum RowFilter: String, CaseIterable, Identifiable {
     }
 }
 
+enum PermissionKind: String, CaseIterable, Identifiable {
+    case category = "Category"
+    case fileTypes = "File types"
+    case folder = "A folder"
+    var id: String { rawValue }
+}
+
 enum RuleFilter: String, CaseIterable, Identifiable {
     case all = "All"
     case flagged = "Flagged"
@@ -86,7 +93,8 @@ final class AppStore {
     // Add Permission sheet
     var addingPermission = false
     var newAccess: CustomAccess = .read
-    var newIsFolder = false
+    var newKind: PermissionKind = .category
+    var newCategory: FileCategory = .media
     var newValue = ""
 
     // Replace / Restore confirmation
@@ -319,11 +327,14 @@ final class AppStore {
     func addPermission(_ key: String) {
         guard var draft = drafts[key] else { return }
         do {
-            if newIsFolder {
+            switch newKind {
+            case .category:
+                draft.addCustom(newAccess, category: newCategory)
+            case .fileTypes:
+                draft.addCustom(newAccess, fileTypes: try MenshenConfig.fileExtensions(newValue))
+            case .folder:
                 guard !newValue.isEmpty else { throw MenshenError.usage("choose a folder") }
                 draft.addCustom(newAccess, folder: newValue, environment: environment)
-            } else {
-                draft.addCustom(newAccess, fileTypes: try MenshenConfig.fileExtensions(newValue))
             }
             drafts[key] = draft
             addingPermission = false

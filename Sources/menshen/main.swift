@@ -8,7 +8,7 @@ let usage = """
       menshen learn   <App.app | binary> [--duration 10m] [--merge] [--config PATH] [-- app-args…]
       menshen enforce <App.app | binary | config.json> [--duration 10m] [--config PATH] [--allow-changed] [-- app-args…]
       menshen show    <App.app | binary | config.json> [--config PATH]
-      menshen allow   <App.app | config.json> [--write] TYPES… | FOLDER…   e.g. allow VLC.app mp4 mkv
+      menshen allow   <App.app | config.json> [--write] CATEGORY… | TYPES… | FOLDER…   e.g. allow VLC.app media
       menshen allow   <App.app | config.json> --remove RULE-ID
       menshen replace <App.app>       swap the app for a launcher that always runs it under enforce
       menshen restore <App.app | bundle-id>
@@ -20,8 +20,9 @@ let usage = """
     enforce  Run the app under the config. Denials and risky allows (network, process
              launches, writes outside the app's folders) go to a JSONL log.
     show     Print the SBPL profile the config compiles to.
-    allow    Add a broad permission of your own: every file of some types (mp4 mkv), or a
-             folder (~/Movies). Read only unless --write. Protected locations stay blocked.
+    allow    Add a broad permission of your own: a category as macOS sections file types
+             (media, images, documents), some types (mp4 mkv), or a folder (~/Movies).
+             Read only unless --write. Protected locations stay blocked.
     replace  Rename the app to a hidden .Name.menshen.app (untouched) and put a launcher with
              its name and icon in its place, so Dock/Finder/Spotlight run it under enforce.
     restore  Remove the launcher and put the original back.
@@ -142,11 +143,15 @@ func runAllow(_ p: Parsed, _ target: String) throws -> Int32 {
     guard !p.extra.isEmpty else {
         throw MenshenError.usage("allow needs file types or a folder, e.g.  menshen allow \(target) mp4 mkv")
     }
-    // Folders start with /, ~ or ./ ; anything else is a file type (mp4, .mkv, *.mov).
+    // Folders start with /, ~ or ./ ; a category name is a category; anything else is a file type.
     let isFolder = { (s: String) in s.hasPrefix("/") || s.hasPrefix("~") || s.hasPrefix("./") }
     let access: CustomAccess = p.write ? .readWrite : .read
     var added: [Rule] = []
-    let types = p.extra.filter { !isFolder($0) }
+    // Category names (media, images, documents) pick every type macOS puts in that category.
+    for category in p.extra.compactMap({ FileCategory(rawValue: $0.lowercased()) }) {
+        added.append(config.addCustom(access, category: category))
+    }
+    let types = p.extra.filter { !isFolder($0) && FileCategory(rawValue: $0.lowercased()) == nil }
     if !types.isEmpty {
         added.append(config.addCustom(access, fileTypes: try MenshenConfig.fileExtensions(types.joined(separator: " "))))
     }

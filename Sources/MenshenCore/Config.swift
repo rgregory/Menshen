@@ -62,6 +62,8 @@ public struct Rule: Codable, Equatable, Identifiable, Sendable {
     public var seen: Int
     /// True when learning saw the app do something this hardening rule denies.
     public var flagged: Bool?
+    /// Set for category presets ("media", "documents"), so they read as names, not long lists.
+    public var label: String?
     public var note: String?
 
     public init(
@@ -222,6 +224,16 @@ extension MenshenConfig {
         add(Rule(action: .allow, operations: access.operations,
                  filter: Filter(.fileTypes, fileTypes.joined(separator: ",")), source: .custom,
                  note: "Added by you."))
+    }
+
+    /// Allows reading (or reading and writing) every file macOS puts in a category, anywhere.
+    @discardableResult
+    public mutating func addCustom(_ access: CustomAccess, category: FileCategory) -> Rule {
+        var rule = Rule(action: .allow, operations: access.operations,
+                        filter: Filter(.fileTypes, category.extensions.joined(separator: ",")), source: .custom,
+                        note: "Added by you: \(category.title).")
+        rule.label = category.rawValue
+        return add(rule)
     }
 
     /// Allows reading (or reading and writing) everything inside a folder.

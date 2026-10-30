@@ -130,21 +130,34 @@ struct AddPermissionSheet: View {
                 ForEach(CustomAccess.allCases, id: \.self) { Text($0.rawValue).tag($0) }
             }
             .pickerStyle(.segmented)
-            Picker("For", selection: Bindable(store).newIsFolder) {
-                Text("File types").tag(false)
-                Text("A folder").tag(true)
+            Picker("For", selection: Bindable(store).newKind) {
+                ForEach(PermissionKind.allCases) { Text($0.rawValue).tag($0) }
             }
             .pickerStyle(.segmented)
-            if store.newIsFolder {
+            switch store.newKind {
+            case .category:
+                Picker("Category", selection: Bindable(store).newCategory) {
+                    ForEach(FileCategory.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                // Show exactly what the category covers, as macOS classifies types on this Mac.
+                Text(store.newCategory.extensions.map { ".\($0)" }.joined(separator: " "))
+                    .font(.caption.monospaced()).foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                if store.newCategory == .documents {
+                    Text("Code, scripts and config files (json, yaml, sh…) are left out on purpose: that's where keys and tokens live.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            case .fileTypes:
+                TextField("e.g. mp4, mkv, mov", text: Bindable(store).newValue)
+                Text("Every file with these extensions, anywhere.")
+                    .font(.caption).foregroundStyle(.secondary)
+            case .folder:
                 HStack {
                     TextField("Folder", text: Bindable(store).newValue)
                     Button("Choose…") { store.chooseFolder() }
                 }
                 Text("Everything inside this folder.").font(.caption).foregroundStyle(.secondary)
-            } else {
-                TextField("e.g. mp4, mkv, mov", text: Bindable(store).newValue)
-                Text("Every file with these extensions, anywhere, in any letter case.")
-                    .font(.caption).foregroundStyle(.secondary)
             }
             Text("Protected locations (like ~/.ssh and other apps' data) stay blocked either way. Save the config to apply.")
                 .font(.caption).foregroundStyle(.secondary)
@@ -152,7 +165,7 @@ struct AddPermissionSheet: View {
                 Spacer()
                 Button("Cancel") { store.addingPermission = false }.keyboardShortcut(.cancelAction)
                 Button("Add") { store.addPermission(key) }.keyboardShortcut(.defaultAction)
-                    .disabled(store.newValue.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .disabled(store.newKind != .category && store.newValue.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
         .padding()

@@ -28,12 +28,16 @@ Add apps with **+** or by dropping them on the sidebar.
 Learning only allows what the app did. To allow a whole class of files or a folder up front:
 
 ```sh
-menshen allow /Applications/VLC.app mp4 mkv mov          # read every .mp4/.mkv/.mov anywhere, any letter case
+menshen allow /Applications/VLC.app media                # read every media file (video & audio), as macOS classifies them
+menshen allow /Applications/VLC.app documents images     # also document and image files
+menshen allow /Applications/VLC.app mp4 mkv mov          # or specific types
 menshen allow /Applications/VLC.app ~/Movies --write     # read and write everything in ~/Movies
 menshen allow /Applications/VLC.app --remove C-1a2b3c4d  # remove one of your rules
 ```
 
-The same is in the app: Config → **Add Permission…**. Your rules come after the learned rules but **before the protections**, so `~/.ssh/key.mp4` stays blocked. They survive re-learning.
+**Categories** follow macOS's own file-type classification (UTType, what Finder's "Kind" uses), resolved when you add the rule and stored as a plain list in the config. **Media** is movies plus audio; **Images**; **Documents** is PDF, Office, iWork, OpenDocument, ePub and plain or rich text. Code, scripts and config files (json, yaml, sh…) are never "documents", and `.ts` (also TypeScript) and `.key` (also private keys) are left out of the presets.
+
+The same is in the app: Config → **Add Permission…** → Category, which shows the exact extensions before you add them. Your rules come after the learned rules but **before the protections**, so `~/.ssh/key.mp4` stays blocked. They survive re-learning.
 
 ## Replacing an app
 

@@ -30,7 +30,7 @@ import Testing
         #expect(text.contains("(allow network-outbound (remote ip \"*:443\") (with report))"))
         #expect(text.contains("(allow process-exec* (literal \"/bin/sh\") (with report))"))
         #expect(text.contains("(subpath \"\(testHome)/Documents\") (with report))"))
-        #expect(text.contains("(allow file-read* (regex #\"\\.([mM][pP]4)$\"))"))
+        #expect(text.contains("(allow file-read* (regex #\"\\.(mp4|MP4)$\"))"))
         #expect(!text.contains("~/"), "home paths are expanded at compile time")
         #expect(text.contains("(allow user-preference-read user-preference-write (preference-domain \"com.example.foo\"))"))
         #expect(lines.contains("(allow mach-lookup (global-name-prefix \"com.apple.\"))"))
@@ -86,7 +86,7 @@ import Testing
         #expect(try MenshenConfig.fileExtensions("*.mp4, .MKV mov;mp4") == ["mp4", "mkv", "mov"])
         #expect(throws: MenshenError.self) { try MenshenConfig.fileExtensions("mp4\")(allow default") }
         #expect(throws: MenshenError.self) { try MenshenConfig.fileExtensions("  ") }
-        #expect(ProfileCompiler.caseInsensitive("mp4,mkv") == "[mM][pP]4|[mM][kK][vV]")
+        #expect(ProfileCompiler.caseInsensitive("mp4,mkv,3gp") == "mp4|MP4|mkv|MKV|3gp|3GP")
     }
 
     @Test func yourRulesAddAndRemove() throws {
@@ -224,5 +224,52 @@ import Testing
         #expect(cat("\(dir)/media/clip.MP4", profile) == 0, "readable in any folder, any letter case")
         #expect(cat("\(dir)/media/notes.txt", profile) != 0, "other types stay blocked")
         #expect(cat("\(home)/.ssh/key.mp4", profile) != 0, "hardening still wins over your rules")
+    }
+
+    @Test func mediaAndDocumentPresetsInTheKernel() throws {
+        let home = dir + "/home"
+        try FileManager.default.createDirectory(atPath: home + "/.ssh", withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(atPath: dir + "/stuff", withIntermediateDirectories: true)
+        let files = ["song.MP3", "clip.Mov", "report.pdf", "notes.txt", "config.json", "script.sh", "server.key", "app.ts"]
+        for f in files { try "x".write(toFile: "\(dir)/stuff/\(f)", atomically: true, encoding: .utf8) }
+        try "x".write(toFile: home + "/.ssh/id.mp3", atomically: true, encoding: .utf8)
+        let env = MenshenEnvironment(home: home, dataRoot: URL(fileURLWithPath: dir), logsRoot: URL(fileURLWithPath: dir),
+                                     userTempRoot: nil)
+        var config = Learn.build(target: try ResolvedTarget.resolve("/bin/cat"), events: [], environment: env)
+        config.addCustom(.read, category: .media)
+        config.addCustom(.read, category: .documents)
+        let profile = ProfileCompiler(environment: env).compile(config)
+        func readable(_ f: String) -> Bool { cat("\(dir)/stuff/\(f)", profile) == 0 }
+
+        #expect(readable("song.MP3") && readable("clip.Mov"), "media in any case mix (case-insensitive volume)")
+        #expect(readable("report.pdf") && readable("notes.txt"), "documents")
+        #expect(!readable("config.json") && !readable("script.sh"), "config and scripts are not documents")
+        #expect(!readable("server.key") && !readable("app.ts"), "ambiguous extensions are left out")
+        #expect(cat(home + "/.ssh/id.mp3", profile) != 0, "hardening still wins")
+    }
+}
+
+
+/// Categories follow macOS's own classification, minus extensions that also name code or keys.
+@Suite struct CategoryTests {
+    @Test func categoriesMatchHowMacOSSectionsTypes() {
+        let media = Set(FileCategory.media.extensions)
+        let documents = Set(FileCategory.documents.extensions)
+        let images = Set(FileCategory.images.extensions)
+        #expect(media.isSuperset(of: ["mp4", "mov", "avi", "mp3", "m4a", "wav"]))
+        #expect(documents.isSuperset(of: ["pdf", "docx", "xlsx", "pptx", "txt", "rtf", "md", "csv"]))
+        #expect(images.isSuperset(of: ["jpg", "png", "heic", "gif"]))
+        #expect(media.isDisjoint(with: documents) && media.isDisjoint(with: images) && documents.isDisjoint(with: images))
+        #expect(!media.contains("ts"), ".ts is also TypeScript source")
+        #expect(!documents.contains("key"), ".key is also a private key")
+        #expect(documents.isDisjoint(with: ["json", "yaml", "sh", "py", "swift", "plist", "html"]), "no code or config")
+    }
+
+    @Test func presetsReadAsNames() {
+        var config = Learn.build(target: fooTarget, events: [], environment: testEnvironment())
+        let rule = config.addCustom(.read, category: .media)
+        #expect(rule.label == "media")
+        #expect(RuleText.describe(rule) == "Read all media files (video & audio)")
+        #expect(rule.filter.value?.split(separator: ",").contains("mkv") == FileCategory.media.extensions.contains("mkv"))
     }
 }

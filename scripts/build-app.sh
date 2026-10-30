@@ -7,7 +7,7 @@ set -eu
 cd "$(dirname "$0")/.."
 
 if pgrep -f "$PWD/build/Menshen.app/Contents/MacOS/Menshen" >/dev/null; then
-    echo "build-app.sh: Menshen is running from build/Menshen.app; it will quit when the bundle is replaced." >&2
+    echo "build-app.sh: Menshen is running from build/Menshen.app. Quit and reopen it after the build; until then it may keep running the old version." >&2
 fi
 
 swift build -c release --product MenshenApp

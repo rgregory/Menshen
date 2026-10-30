@@ -161,12 +161,14 @@ public struct ProfileCompiler {
 }
 
 extension ProfileCompiler {
-    /// "mp4,mkv" → "[mM][pP]4|[mM][kK][vV]". SBPL regexes have no case-insensitive flag (`(?i)`
-    /// silently matches nothing), so each letter becomes a character class. Extensions are
-    /// validated to letters and digits when the rule is created.
+    /// "mp4,mkv" → "mp4|MP4|mkv|MKV": readable in an audit. SBPL regexes have no
+    /// case-insensitive flag (`(?i)` silently matches nothing), but on macOS's default
+    /// case-insensitive volumes any mix of case matches anyway (tested). Extensions are validated
+    /// to letters and digits when the rule is created.
     static func caseInsensitive(_ extensions: String) -> String {
-        extensions.split(separator: ",").map { ext in
-            ext.map { c in c.isLetter ? "[\(c.lowercased())\(c.uppercased())]" : String(c) }.joined()
+        extensions.split(separator: ",").flatMap { ext -> [String] in
+            let lower = ext.lowercased(), upper = ext.uppercased()
+            return lower == upper ? [lower] : [lower, upper]
         }.joined(separator: "|")
     }
 }
