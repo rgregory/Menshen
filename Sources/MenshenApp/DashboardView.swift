@@ -33,8 +33,7 @@ struct DashboardView: View {
                         Card("Sensitive", systemImage: "lock.shield", items: summary.sensitive,
                              empty: "Nothing sensitive was touched while learning",
                              footer: "\(summary.protectedCount) sensitive locations and behaviors are protected.")
-                        Card("Restrictions", systemImage: "lock", items: summary.restrictions,
-                             empty: "No templates. Add them in Config.")
+                        ProfilesCard(store: store, entry: entry)
                         ReplaceCard(store: store, item: item, entry: entry, problem: problem)
                     }
                 } else {
@@ -352,5 +351,88 @@ struct ActivityTile: View {
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+/// Profiles: one-click restrictions on top of what the app learned, applied immediately.
+struct ProfilesCard: View {
+    let store: AppStore
+    let entry: AppEntry
+
+    var body: some View {
+        let active = Set(entry.config.profiles ?? [])
+        GroupBox {
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(Profile.allCases, id: \.self) { profile in
+                    Toggle(isOn: Binding(get: { active.contains(profile) },
+                                         set: { store.applyProfile(entry.id, profile, on: $0) })) {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(profile.title)
+                            Text(profile.explanation).font(.caption).foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .toggleStyle(.switch)
+                }
+                Divider()
+                HStack {
+                    Text("Limits").foregroundStyle(.secondary)
+                    LimitField(label: "CPU seconds", value: entry.config.limits?.cpuSeconds) {
+                        store.applyLimit(entry.id, \.cpuSeconds, $0)
+                    }
+                    LimitField(label: "Memory MiB", value: entry.config.limits?.memoryMB) {
+                        store.applyLimit(entry.id, \.memoryMB, $0)
+                    }
+                }
+                Text("Applied the next time the app runs. Profiles override what was learned; protections stay on.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(4)
+        } label: {
+            Label("Profiles", systemImage: "slider.horizontal.3").font(.headline)
+        }
+    }
+}
+
+/// A number field that applies when you press Return or leave it.
+struct LimitField: View {
+    let label: String
+    let value: Int?
+    let apply: (String) -> Void
+
+    var body: some View {
+        CommitField(label: label, initial: value.map(String.init) ?? "", apply: apply)
+            .frame(width: 110)
+    }
+}
+
+/// An AppKit field that keeps its own text until you press Return or leave it, so typing
+/// doesn't save on every keystroke (SwiftUI's @State isn't available with these tools).
+private struct CommitField: NSViewRepresentable {
+    let label: String
+    let initial: String
+    let apply: (String) -> Void
+
+    func makeNSView(context: Context) -> NSTextField {
+        let field = NSTextField(string: initial)
+        field.placeholderString = label
+        field.delegate = context.coordinator
+        return field
+    }
+
+    func updateNSView(_ field: NSTextField, context: Context) {
+        if field.currentEditor() == nil { field.stringValue = initial }
+        context.coordinator.apply = apply
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(apply: apply) }
+
+    final class Coordinator: NSObject, NSTextFieldDelegate {
+        var apply: (String) -> Void
+        init(apply: @escaping (String) -> Void) { self.apply = apply }
+        func controlTextDidEndEditing(_ note: Notification) {
+            if let field = note.object as? NSTextField { apply(field.stringValue) }
+        }
     }
 }

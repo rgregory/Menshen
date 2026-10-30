@@ -2,7 +2,7 @@ import Foundation
 
 /// Config → SBPL. Order matters: SBPL lets later matching rules override earlier ones, so the
 /// layout is base → always-on → learned → your rules → hardening → final denies (ADR-003).
-public struct ProfileCompiler {
+public struct SBPLCompiler {
     public static let learnProfile = """
         (version 1)
         ;; Menshen learn mode: allow everything, report every operation to the kernel log.
@@ -56,7 +56,7 @@ public struct ProfileCompiler {
             out.append(title)
             out += statements(rules, logging: config.logging, config: config)
         }
-        out += templateSection(config, own: own)
+        out += profileSection(config, own: own)
         out.append("")
         out.append(";; --- hardening (last, so it wins)")
         out += statements(config.hardening, logging: config.logging, config: config)
@@ -65,26 +65,26 @@ public struct ProfileCompiler {
         return out.joined(separator: "\n")
     }
 
-    /// Templates restrict what was learned, so they come after learned and your rules. Order
+    /// Profiles restrict what was learned, so they come after learned and your rules. Order
     /// inside matters here: a blanket deny, then the narrow allow that survives it. The blanket
     /// denies carry `(subpath "/")`: a deny with no filter only sets the operation's default and
     /// loses to any filtered allow, whatever the order (tested).
-    func templateSection(_ config: MenshenConfig, own: String) -> [String] {
-        let templates = Set(config.templates ?? [])
-        guard !templates.subtracting([.background]).isEmpty else { return [] }
-        let names = Template.allCases.filter { templates.contains($0) && $0 != .background }.map(\.rawValue)
-        var out = ["", ";; --- templates: \(names.joined(separator: ", "))"]
-        if templates.contains(.offline) {
+    func profileSection(_ config: MenshenConfig, own: String) -> [String] {
+        let profiles = Set(config.profiles ?? [])
+        guard !profiles.subtracting([.background]).isEmpty else { return [] }
+        let names = Profile.allCases.filter { profiles.contains($0) && $0 != .background }.map(\.rawValue)
+        var out = ["", ";; --- profiles: \(names.joined(separator: ", "))"]
+        if profiles.contains(.offline) {
             out.append("(deny network-outbound (remote ip))")
             out.append("(deny network-bind network-inbound (local ip))")
         }
-        if templates.contains(.tempOnly) {
+        if profiles.contains(.tempOnly) {
             out.append("(deny file-write* (subpath \"/\"))")
             var places = [environment.privateTemp(config.target.key).path]
             if let temp = environment.userTempRoot { places.append(temp) }
             out.append(statement("allow", ["file-write*"], places.map { "(subpath \(quote($0)))" } + ["(subpath \"/dev\")"], report: false))
         }
-        if templates.contains(.noLaunch) {
+        if profiles.contains(.noLaunch) {
             out.append("(deny process-exec* (subpath \"/\"))")
             let taskpolicy = config.limits?.memoryMB != nil ? " (literal \"/usr/sbin/taskpolicy\")" : ""
             out.append("(allow process-exec* \(own)\(taskpolicy)\(config.logging.exec ? " (with report)" : ""))")
@@ -213,8 +213,8 @@ public struct ProfileCompiler {
 
     /// Asks the kernel to load the profile (plus permission to exec /usr/bin/true) and run true.
     /// Returns nil on success, or sandbox-exec's error text.
-    public static func validate(_ profileText: String) -> String? {
-        let probe = profileText + "\n(allow process-exec* (literal \"/usr/bin/true\"))\n"
+    public static func validate(_ sbplText: String) -> String? {
+        let probe = sbplText + "\n(allow process-exec* (literal \"/usr/bin/true\"))\n"
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/bin/sandbox-exec")
         task.arguments = ["-p", probe, "/usr/bin/true"]
@@ -228,7 +228,7 @@ public struct ProfileCompiler {
     }
 }
 
-extension ProfileCompiler {
+extension SBPLCompiler {
     /// "mp4,mkv" → "mp4|MP4|mkv|MKV": readable in an audit. SBPL regexes have no
     /// case-insensitive flag (`(?i)` silently matches nothing), but on macOS's default
     /// case-insensitive volumes any mix of case matches anyway (tested). Extensions are validated

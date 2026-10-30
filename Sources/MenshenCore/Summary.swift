@@ -104,8 +104,6 @@ public struct AccessSummary: Sendable {
     public var launches: [Item] = []
     public var services: [Item] = []
     public var sensitive: [Item] = []
-    /// Active templates and resource limits.
-    public var restrictions: [Item] = []
     /// Hardening rules that deny something (protected locations and behaviors).
     public var protectedCount = 0
 
@@ -200,37 +198,28 @@ public struct AccessSummary: Sendable {
             s.sensitive.append(Item(title: title, detail: detail, access: state, flagged: rule.flagged == true))
         }
         s.sensitive.sort { $0.flagged && !$1.flagged }
-        s.applyTemplates(config)
+        s.applyProfiles(config)
         return s
     }
 
-    /// Templates override learned allows, so the summary must say what really applies.
-    mutating func applyTemplates(_ config: MenshenConfig) {
-        let templates = Set(config.templates ?? [])
-        if templates.contains(.offline) {
+    /// Profiles override learned allows, so the summary must say what really applies.
+    mutating func applyProfiles(_ config: MenshenConfig) {
+        let profiles = Set(config.profiles ?? [])
+        if profiles.contains(.offline) {
             network = network.filter { $0.title.contains("DNS") || $0.title.contains("system log") || $0.title.contains("local socket") }
-            network.append(Item(title: "All internet and local-network connections", detail: "Offline template", access: "blocked"))
+            network.append(Item(title: "All internet and local-network connections", detail: "Offline profile", access: "blocked"))
         }
-        if templates.contains(.tempOnly) {
+        if profiles.contains(.tempOnly) {
             files = files.compactMap { item in
                 var item = item
                 if item.access == "write" { return nil }
                 if item.access == "read & write" { item.access = "read" }
                 return item
             }
-            files.append(Item(title: "Writes", detail: "temp folders only (Temp-only template)", access: "write"))
+            files.append(Item(title: "Writes", detail: "temp folders only (Temp-only profile)", access: "write"))
         }
-        if templates.contains(.noLaunch) {
-            launches = [Item(title: "Other programs", detail: "No other programs template", access: "blocked")]
-        }
-        for template in Template.allCases where templates.contains(template) {
-            restrictions.append(Item(title: template.title, detail: template.explanation, access: "on"))
-        }
-        if let seconds = config.limits?.cpuSeconds {
-            restrictions.append(Item(title: "CPU time limit", detail: "stopped after \(seconds) s of CPU time", access: "limit"))
-        }
-        if let mb = config.limits?.memoryMB {
-            restrictions.append(Item(title: "Memory limit", detail: "killed above \(mb) MiB", access: "limit"))
+        if profiles.contains(.noLaunch) {
+            launches = [Item(title: "Other programs", detail: "No other programs profile", access: "blocked")]
         }
     }
 }

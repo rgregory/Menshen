@@ -26,7 +26,7 @@ import Testing
     func compiled() throws -> String {
         let target = try ResolvedTarget.resolve(probe)
         let config = Learn.build(target: target, events: [], environment: .current())
-        return ProfileCompiler(environment: .current()).compile(config)
+        return SBPLCompiler(environment: .current()).compile(config)
     }
 
     /// Same base as a compiled profile, without the Apple service/preference lines.
@@ -37,9 +37,9 @@ import Testing
         """
     }
 
-    func run(_ profileText: String, _ args: [String]) throws -> Int32 {
+    func run(_ sbplText: String, _ args: [String]) throws -> Int32 {
         let profile = dir + "/p-\(UUID().uuidString).sb"
-        try profileText.write(toFile: profile, atomically: true, encoding: .utf8)
+        try sbplText.write(toFile: profile, atomically: true, encoding: .utf8)
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/sandbox-exec")
         p.arguments = ["-f", profile, probe] + args
@@ -148,12 +148,12 @@ import Testing
         #expect(!denied.contains { $0.target.hasSuffix("/allowed/out.txt") })
     }
 
-    /// Templates override what was learned: the probe's learned connect, launch and write are
+    /// Profiles override what was learned: the probe's learned connect, launch and write are
     /// blocked, its learned read still works.
-    @Test func templatesRestrictWhatWasLearned() throws {
+    @Test func profilesRestrictWhatWasLearned() throws {
         let learned = try learn()
         var config = learned.config
-        config.templates = [.offline, .noLaunch, .tempOnly]
+        config.profiles = [.offline, .noLaunch, .tempOnly]
         try config.write(to: learned.configURL)
 
         let (_, records) = try enforce()
@@ -169,7 +169,7 @@ import Testing
     @Test func backgroundPriorityStillRunsAndIsTracked() throws {
         let learned = try learn()
         var config = learned.config
-        config.templates = [.background]
+        config.profiles = [.background]
         config.limits = ResourceLimits(cpuSeconds: 60, memoryMB: 512)
         try config.write(to: learned.configURL)
 

@@ -21,7 +21,7 @@ open build/Menshen.app
 - **History:** past learn captures and enforce logs, filterable (blocked, network, launches, outside writes) and searchable.
 - **Config:** every rule in plain words, with an Allow toggle, flagged rules marked, logging switches, Save (keeps a backup), and Show Profile (the compiled SBPL).
 
-Add apps with **+** or by dropping them on the sidebar.
+Add apps with **+** or by dropping them on the sidebar. Remove one by right-clicking it (or pressing Delete) and choosing **Remove from Menshen…**: its Menshen data goes to the Trash, and the app itself isn't touched. `menshen forget <app>` does the same.
 
 ## Your rules: broad permissions
 
@@ -37,19 +37,19 @@ menshen allow /Applications/VLC.app --remove C-1a2b3c4d  # remove one of your ru
 
 **Categories** follow macOS's own file-type classification (UTType, what Finder's "Kind" uses), resolved when you add the rule and stored as a plain list in the config. **Media** is movies plus audio; **Images**; **Documents** is PDF, Office, iWork, OpenDocument, ePub and plain or rich text. Code, scripts and config files (json, yaml, sh…) are never "documents", and `.ts` (also TypeScript) and `.key` (also private keys) are left out of the presets.
 
-The same is in the app: Config → **Add Permission…** → Category, which shows the exact extensions before you add them. Your rules come after the learned rules but **before the protections**, so `~/.ssh/key.mp4` stays blocked. They survive re-learning.
+The same is in the app: Config → **Add Permission…** → Category, which shows the exact extensions before you add them. **Show Sandbox Rules** in Config shows the compiled SBPL. Your rules come after the learned rules but **before the protections**, so `~/.ssh/key.mp4` stays blocked. They survive re-learning.
 
-## Templates and limits
+## Profiles and limits
 
-One-click restrictions on top of what an app learned, in Config or with `menshen template`:
+One-click restrictions on top of what an app learned. Select any app: its Dashboard has a **Profiles** card with switches that apply immediately. Or use `menshen profile`:
 
 ```sh
-menshen template /Applications/VLC.app offline no-launch        # no network, no other programs
-menshen template /Applications/VLC.app temp-only background --memory-mb 2048 --cpu-seconds 3600
-menshen template /Applications/VLC.app --none                    # clear templates and limits
+menshen profile /Applications/VLC.app offline no-launch        # no network, no other programs
+menshen profile /Applications/VLC.app temp-only background --memory-mb 2048 --cpu-seconds 3600
+menshen profile /Applications/VLC.app --none                    # clear profiles and limits
 ```
 
-| Template | Effect |
+| Profile | Effect |
 |---|---|
 | `offline` | No internet or local-network connections, even if learned. Local sockets (logging, DNS) still work. |
 | `temp-only` | Writes only to temp folders, never your files, even if learned. Command-line tools get a private TMPDIR. Mac apps can only use the shared system temp folder (macOS limitation). |

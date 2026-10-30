@@ -10,7 +10,8 @@ let usage = """
       menshen show    <App.app | binary | config.json> [--config PATH]
       menshen allow   <App.app | config.json> [--write] CATEGORY… | TYPES… | FOLDER…   e.g. allow VLC.app media
       menshen allow   <App.app | config.json> --remove RULE-ID
-      menshen template <App.app | config.json> [offline temp-only no-launch background] [--cpu-seconds N] [--memory-mb N] [--none]
+      menshen profile <App.app | config.json> [offline temp-only no-launch background] [--cpu-seconds N] [--memory-mb N] [--none]
+      menshen forget  <App.app | bundle-id>   move Menshen's data for an app to the Trash
       menshen replace <App.app>       swap the app for a launcher that always runs it under enforce
       menshen restore <App.app | bundle-id>
       menshen swaps                   list replaced apps
@@ -24,7 +25,7 @@ let usage = """
     allow    Add a broad permission of your own: a category as macOS sections file types
              (media, images, documents), some types (mp4 mkv), or a folder (~/Movies).
              Read only unless --write. Protected locations stay blocked.
-    template One-click restrictions on top of what was learned: offline (no network),
+    profile One-click restrictions on top of what was learned: offline (no network),
              temp-only (writes only to temp folders), no-launch (no other programs),
              background (low CPU priority, throttled disk). Plus hard limits on CPU time
              and memory. With no names, shows the current ones.
@@ -91,7 +92,7 @@ func parse(_ argv: [String]) throws -> Parsed {
             p.remove = v
         default:
             if arg.hasPrefix("--") { throw MenshenError.usage("unknown option \(arg)") }
-            if p.target != nil, p.command == "allow" || p.command == "template" {
+            if p.target != nil, p.command == "allow" || p.command == "profile" {
                 p.extra.append(arg)
                 continue
             }
@@ -170,7 +171,7 @@ func runAllow(_ p: Parsed, _ target: String) throws -> Int32 {
     for folder in p.extra where isFolder(folder) {
         added.append(config.addCustom(access, folder: folder, environment: env))
     }
-    if let error = ProfileCompiler.validate(ProfileCompiler(environment: env).compile(config)) {
+    if let error = SBPLCompiler.validate(SBPLCompiler(environment: env).compile(config)) {
         throw MenshenError.failed("the new rule doesn't compile, nothing saved:\n\(error)")
     }
     try config.save(to: url)
@@ -179,20 +180,20 @@ func runAllow(_ p: Parsed, _ target: String) throws -> Int32 {
     return 0
 }
 
-func runTemplate(_ p: Parsed, _ target: String) throws -> Int32 {
+func runProfile(_ p: Parsed, _ target: String) throws -> Int32 {
     var options = EnforceOptions(target: target)
     options.configPath = p.config
     let env = MenshenEnvironment.current()
     let (url, stored) = try Enforce.locateConfig(options, environment: env)
     var config = stored
     if p.none {
-        config.templates = nil
+        config.profiles = nil
         config.limits = nil
     } else if !p.extra.isEmpty || p.cpuSeconds != nil || p.memoryMB != nil {
         if !p.extra.isEmpty {
-            config.templates = try p.extra.map { name in
-                guard let t = Template(rawValue: name.lowercased()) else {
-                    throw MenshenError.usage("unknown template \(name); use \(Template.allCases.map(\.rawValue).joined(separator: ", "))")
+            config.profiles = try p.extra.map { name in
+                guard let t = Profile(rawValue: name.lowercased()) else {
+                    throw MenshenError.usage("unknown profile \(name); use \(Profile.allCases.map(\.rawValue).joined(separator: ", "))")
                 }
                 return t
             }
@@ -204,16 +205,27 @@ func runTemplate(_ p: Parsed, _ target: String) throws -> Int32 {
             config.limits = limits
         }
     } else {
-        let names = config.templates?.map(\.rawValue).joined(separator: ", ") ?? "none"
-        print("templates: \(names)")
+        let names = config.profiles?.map(\.rawValue).joined(separator: ", ") ?? "none"
+        print("profiles: \(names)")
         if let l = config.limits { print("limits: cpu \(l.cpuSeconds.map { "\($0)s" } ?? "none"), memory \(l.memoryMB.map { "\($0) MiB" } ?? "none")") }
         return 0
     }
-    if let error = ProfileCompiler.validate(ProfileCompiler(environment: env).compile(config)) {
-        throw MenshenError.failed("the profile doesn\'t compile with these templates, nothing saved:\n\(error)")
+    if let error = SBPLCompiler.validate(SBPLCompiler(environment: env).compile(config)) {
+        throw MenshenError.failed("the profile doesn\'t compile with these profiles, nothing saved:\n\(error)")
     }
     try config.save(to: url)
-    say("templates: \(config.templates?.map(\.rawValue).joined(separator: ", ") ?? "none"). Saved \(url.path)")
+    say("profiles: \(config.profiles?.map(\.rawValue).joined(separator: ", ") ?? "none"). Saved \(url.path)")
+    return 0
+}
+
+func runForget(_ target: String) throws -> Int32 {
+    let env = MenshenEnvironment.current()
+    // An app path (or its launcher) → its config key; anything else is taken as the key itself.
+    let key = target.contains("/") || target.hasSuffix(".app")
+        ? try ResolvedTarget.resolve(Swap.resolveOriginal(target)).identity.key
+        : target
+    let trashed = try Library.forget(key, env)
+    say("moved \(trashed.count) item(s) for \(key) to the Trash. The app itself wasn't touched.")
     return 0
 }
 
@@ -244,7 +256,7 @@ func runShow(_ p: Parsed, _ target: String) throws -> Int32 {
     options.configPath = p.config
     let env = MenshenEnvironment.current()
     let (url, config) = try Enforce.locateConfig(options, environment: env)
-    print(ProfileCompiler(environment: env).compile(config, source: url.path), terminator: "")
+    print(SBPLCompiler(environment: env).compile(config, source: url.path), terminator: "")
     return 0
 }
 
@@ -267,7 +279,8 @@ do {
     case "enforce": status = try runEnforce(p, target)
     case "show": status = try runShow(p, target)
     case "allow": status = try runAllow(p, target)
-    case "template": status = try runTemplate(p, target)
+    case "forget": status = try runForget(target)
+    case "profile": status = try runProfile(p, target)
     case "replace": status = try runReplace(target)
     case "restore": status = try runRestore(target)
     default: throw MenshenError.usage("unknown command \(p.command)\n\n\(usage)")

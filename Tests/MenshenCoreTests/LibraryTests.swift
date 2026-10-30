@@ -56,4 +56,40 @@ import Testing
         #expect(Library.records(sessions[0].url).count == 3)
         #expect(Library.captureEvents(sessions[1].url).count == 2)
     }
+
+    @Test func forgetMovesEverythingForTheAppToTheTrash() throws {
+        let key = fooTarget.identity.key
+        let fm = FileManager.default
+        let config = Learn.build(target: fooTarget, events: [], environment: env)
+        try config.save(to: env.configURL(key))
+        try config.save(to: env.configURL(key))                       // second save leaves a backup
+        try fm.ensureDirectory(env.learnDir(key))
+        try "x".write(to: env.learnDir(key).appendingPathComponent("a.ndjson"), atomically: true, encoding: .utf8)
+        try fm.ensureDirectory(env.logsDir(key))
+        try "x".write(to: env.logsDir(key).appendingPathComponent("b.jsonl"), atomically: true, encoding: .utf8)
+        try fm.ensureDirectory(env.privateTemp(key))
+        let other = env.configURL("com.example.other")
+        try config.save(to: other)                                    // another app's config must survive
+
+        #expect(Library.files(for: key, env).count == 5)
+        let trashed = try Library.forget(key, env)
+        defer { trashed.forEach { try? fm.removeItem(at: $0) } }      // don't leave test files in the user's Trash
+        #expect(trashed.count == 5)
+        #expect(Library.files(for: key, env).isEmpty)
+        #expect(fm.fileExists(atPath: other.path))
+        #expect(Library.apps(env).map(\.configURL.lastPathComponent) == ["com.example.other.json"], "only the other app is left")
+    }
+
+    @Test func forgetRefusesWhileReplaced() throws {
+        let key = fooTarget.identity.key
+        try Learn.build(target: fooTarget, events: [], environment: env).save(to: env.configURL(key))
+        try Swap.saveRecords([SwapRecord(key: key, appPath: "/Applications/Foo.app",
+                                         hiddenPath: "/Applications/.Foo.menshen.app", cdhash: nil, date: Date())], env)
+        #expect(throws: MenshenError.self) { try Library.forget(key, env) }
+        #expect(FileManager.default.fileExists(atPath: env.configURL(key).path), "nothing moved")
+    }
+
+    @Test func forgetWithNothingStoredSaysSo() {
+        #expect(throws: MenshenError.self) { try Library.forget("com.example.nothing", env) }
+    }
 }

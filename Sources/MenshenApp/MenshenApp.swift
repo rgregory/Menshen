@@ -55,8 +55,22 @@ struct SidebarView: View {
             Section("Apps") {
                 ForEach(store.items) { item in
                     SidebarRow(store: store, item: item).tag(item.id)
+                        .contextMenu {
+                            Button("Remove from Menshen…", role: .destructive) { store.removing = item }
+                        }
                 }
             }
+        }
+        .onDeleteCommand { store.removing = store.selectedItem }
+        .confirmationDialog(store.removing.map { "Remove \($0.name) from Menshen?" } ?? "",
+                            isPresented: Binding(get: { store.removing != nil }, set: { if !$0 { store.removing = nil } }),
+                            presenting: store.removing) { item in
+            Button("Remove", role: .destructive) { store.remove(item) }
+            Button("Cancel", role: .cancel) {}
+        } message: { item in
+            Text(item.entry == nil
+                 ? "It's only listed; Menshen stores nothing for it."
+                 : "Its config, learning runs and logs move to the Trash, so you can recover them. The app itself isn't touched.")
         }
         .dropDestination(for: URL.self) { urls, _ in
             urls.filter { $0.pathExtension == "app" }.forEach(store.add)

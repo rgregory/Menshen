@@ -63,7 +63,7 @@ public enum Learn {
         let configURL = options.configPath ?? environment.configURL(key)
 
         let profile = learnDir.appendingPathComponent("learn.sb")
-        try ProfileCompiler.learnProfile.write(to: profile, atomically: true, encoding: .utf8)
+        try SBPLCompiler.learnProfile.write(to: profile, atomically: true, encoding: .utf8)
         let onEvent = options.onEvent
         let captureURL = learnDir.appendingPathComponent("\(fileStamp()).ndjson")
         let capture = try NDJSONWriter(captureURL)
@@ -121,7 +121,7 @@ public enum Learn {
         if let previous {
             let ids = Set(config.rules.map(\.id))
             config.rules += previous.rules.filter { $0.source == .custom && !ids.contains($0.id) }
-            config.templates = previous.templates
+            config.profiles = previous.profiles
             config.limits = previous.limits
         }
         if let previous, options.merge {
@@ -186,8 +186,8 @@ public enum Enforce {
         // A replaced app runs from its hidden location; its own-bundle rules must follow it.
         let config = stored.rebased(to: target.identity.path)
 
-        let text = ProfileCompiler(environment: environment).compile(config, source: configURL.path)
-        if let error = ProfileCompiler.validate(text) {
+        let text = SBPLCompiler(environment: environment).compile(config, source: configURL.path)
+        if let error = SBPLCompiler.validate(text) {
             throw MenshenError.failed("the compiled profile doesn't load:\n\(error)")
         }
         let profileURL = configURL.deletingPathExtension().appendingPathExtension("sb")
@@ -231,19 +231,19 @@ public enum Enforce {
 
     /// Background priority and hard limits wrap the launch; Temp-only exports a private TMPDIR.
     static func launchOptions(_ config: MenshenConfig, environment: MenshenEnvironment) throws -> LaunchOptions {
-        let templates = Set(config.templates ?? [])
+        let profiles = Set(config.profiles ?? [])
         var launch = LaunchOptions()
         if let seconds = config.limits?.cpuSeconds, seconds > 0 {
             launch.wrapper += ["/bin/sh", "-c", "ulimit -t \(seconds); exec \"$@\"", "sh"]
         }
-        if templates.contains(.background) {
+        if profiles.contains(.background) {
             launch.wrapper += ["/usr/sbin/taskpolicy", "-c", "background", "-d", "throttle"]
         }
         // The memory limit doesn't survive sandbox-exec (tested), so it's applied inside, right before the app.
         if let mb = config.limits?.memoryMB, mb > 0 {
             launch.inner = ["/usr/sbin/taskpolicy", "-m", String(mb)]
         }
-        if templates.contains(.tempOnly) {
+        if profiles.contains(.tempOnly) {
             let dir = environment.privateTemp(config.target.key)
             try FileManager.default.ensureDirectory(dir)
             launch.environment["TMPDIR"] = dir.path + "/"

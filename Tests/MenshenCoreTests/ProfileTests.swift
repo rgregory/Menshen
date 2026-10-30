@@ -2,26 +2,26 @@ import Foundation
 import Testing
 @testable import MenshenCore
 
-@Suite final class TemplateTests {
+@Suite final class ProfileTests {
     let dir = "/private/tmp/menshen-tpl-\(UUID().uuidString)"
     deinit { try? FileManager.default.removeItem(atPath: dir) }
 
     let env = testEnvironment()
 
-    @Test func olderConfigsWithoutTemplatesLoad() throws {
+    @Test func olderConfigsWithoutProfilesLoad() throws {
         let config = Learn.build(target: fooTarget, events: [], environment: env)
         var json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(config)) as! [String: Any]
-        json["templates"] = nil
+        json["profiles"] = nil
         json["limits"] = nil
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .deferredToDate
         let loaded = try decoder.decode(MenshenConfig.self, from: JSONSerialization.data(withJSONObject: json))
-        #expect(loaded.templates == nil && loaded.limits == nil)
+        #expect(loaded.profiles == nil && loaded.limits == nil)
     }
 
     @Test func launchWrapsInPlace() throws {
         var config = Learn.build(target: fooTarget, events: [], environment: env)
-        config.templates = [.background, .tempOnly]
+        config.profiles = [.background, .tempOnly]
         config.limits = ResourceLimits(cpuSeconds: 30, memoryMB: 256)
         let e = MenshenEnvironment(home: testHome, dataRoot: URL(fileURLWithPath: dir), logsRoot: URL(fileURLWithPath: dir),
                                    userTempRoot: nil)
@@ -34,19 +34,18 @@ import Testing
         #expect(Array(argv.suffix(8)) == ["/usr/bin/sandbox-exec", "-f", "/p.sb", "/usr/sbin/taskpolicy", "-m", "256", "/a", "x"])
     }
 
-    @Test func summaryReflectsTemplates() {
+    @Test func summaryReflectsProfiles() {
         var config = Learn.build(target: fooTarget, events: [
             allow("network-outbound", "remote:*:443"),
             allow("process-exec*", "/bin/sh"),
             allow("file-write-data", "\(testHome)/Documents/a.txt"),
         ], environment: env)
-        config.templates = [.offline, .noLaunch, .tempOnly]
+        config.profiles = [.offline, .noLaunch, .tempOnly]
         let s = AccessSummary.make(config, environment: env)
         #expect(!s.network.contains { $0.title.contains("443") }, "learned network no longer applies")
         #expect(s.network.contains { $0.access == "blocked" })
         #expect(s.launches.map(\.access) == ["blocked"])
         #expect(!s.files.contains { $0.access.contains("write") && $0.title != "Writes" })
-        #expect(s.restrictions.map(\.title) == ["Offline", "Temp-only writes", "No other programs"])
     }
 
     /// The CPU budget is enforced by the kernel: a busy loop is stopped with SIGXCPU.
@@ -116,7 +115,7 @@ import Testing
                                      userTempRoot: nil)
         var config = Learn.build(target: try ResolvedTarget.resolve("/bin/cat"), events: [], environment: env)
         config.addCustom(.read, folder: home + "/proj", environment: env)
-        let profile = ProfileCompiler(environment: env).compile(config)
+        let profile = SBPLCompiler(environment: env).compile(config)
         func cat(_ f: String) -> Int32 {
             Swap.run("/usr/bin/sandbox-exec", ["-p", profile, "/bin/cat", f])
         }
@@ -129,7 +128,7 @@ import Testing
         let env = testEnvironment()
         var config = Learn.build(target: fooTarget, events: [], environment: env)
         config.hardening.removeAll { $0.id == "H-npmrc" || $0.id == "H-env-files" }
-        let text = ProfileCompiler(environment: env).compile(config)
+        let text = SBPLCompiler(environment: env).compile(config)
         #expect(text.contains("(subpath \"\(testHome)/.npmrc\")"))
         #expect(text.contains(#"(regex #"/\.env(\.[^/]*)?$")"#))
     }

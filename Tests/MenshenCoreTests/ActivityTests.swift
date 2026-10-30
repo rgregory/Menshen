@@ -19,7 +19,7 @@ import Testing
             allow("file-read-data", "\(testHome)/Music/song.mp3"),
             allow("mach-lookup", "org.example.helper"),
         ], environment: env)
-        let text = ProfileCompiler(environment: env).compile(config)
+        let text = SBPLCompiler(environment: env).compile(config)
         #expect(text.contains("(allow file-read* (subpath \"/System\"))\n"), "system reads: no report")
         #expect(text.contains("(subpath \"\(testHome)/Music\") (with report))"))
         #expect(text.contains("(allow mach-lookup (global-name \"org.example.helper\") (with report))"))
@@ -27,7 +27,7 @@ import Testing
 
         var quiet = config
         quiet.logging.activity = false
-        let off = ProfileCompiler(environment: env).compile(quiet)
+        let off = SBPLCompiler(environment: env).compile(quiet)
         #expect(!off.contains("Music\") (with report)"), "activity off: reads are not reported")
         #expect(off.contains("(allow mach-lookup (global-name-prefix \"com.apple.\"))\n"))
     }

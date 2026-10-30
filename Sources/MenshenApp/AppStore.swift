@@ -90,7 +90,7 @@ final class AppStore {
     var drafts: [String: MenshenConfig] = [:]
     var ruleFilter: RuleFilter = .all
     var ruleSearch = ""
-    var profileText: String?
+    var sbplText: String?
 
     // Add Permission sheet
     var addingPermission = false
@@ -98,6 +98,9 @@ final class AppStore {
     var newKind: PermissionKind = .category
     var newCategory: FileCategory = .media
     var newValue = ""
+
+    /// The app waiting for "Remove from Menshen" confirmation.
+    var removing: AppItem?
 
     // Replace / Restore confirmation
     var confirmingReplace = false
@@ -134,7 +137,7 @@ final class AppStore {
         selection = key
         historySelection = nil
         historyRows = []
-        profileText = nil
+        sbplText = nil
         refresh()
     }
 
@@ -171,6 +174,30 @@ final class AppStore {
         } catch {
             return "\(error)"
         }
+    }
+
+    // MARK: - Removing apps
+
+    /// Takes the app off the list. A learned app's Menshen data goes to the Trash (the app
+    /// itself is untouched); a replaced or running app is refused.
+    func remove(_ item: AppItem) {
+        if sessions[item.id]?.running == true {
+            message = "\(item.name) is running under Menshen. Stop it first."
+            return
+        }
+        if item.entry != nil {
+            do {
+                try Library.forget(item.id, environment)
+            } catch {
+                message = "\(error)"
+                return
+            }
+        }
+        added.removeAll { $0.id == item.id }
+        sessions[item.id] = nil
+        drafts[item.id] = nil
+        if selection == item.id { select(nil) }
+        refresh()
     }
 
     // MARK: - Sessions
@@ -378,20 +405,41 @@ final class AppStore {
         }
     }
 
-    func setTemplate(_ key: String, _ template: Template, on: Bool) {
-        guard var draft = drafts[key] else { return }
-        var set = Set(draft.templates ?? [])
-        if on { set.insert(template) } else { set.remove(template) }
-        draft.templates = set.isEmpty ? nil : Template.allCases.filter { set.contains($0) }
-        drafts[key] = draft
+    /// Turns a profile on or off for an app right away (saved with a backup of the previous config).
+    func applyProfile(_ key: String, _ profile: Profile, on: Bool) {
+        update(key) { config in
+            var set = Set(config.profiles ?? [])
+            if on { set.insert(profile) } else { set.remove(profile) }
+            config.profiles = set.isEmpty ? nil : Profile.allCases.filter { set.contains($0) }
+        }
     }
 
-    func setLimit(_ key: String, _ path: WritableKeyPath<ResourceLimits, Int?>, _ text: String) {
-        guard var draft = drafts[key] else { return }
-        var limits = draft.limits ?? ResourceLimits()
-        limits[keyPath: path] = Int(text.trimmingCharacters(in: .whitespaces)).flatMap { $0 > 0 ? $0 : nil }
-        draft.limits = limits.cpuSeconds == nil && limits.memoryMB == nil ? nil : limits
-        drafts[key] = draft
+    /// Sets a hard limit right away; empty or zero clears it.
+    func applyLimit(_ key: String, _ path: WritableKeyPath<ResourceLimits, Int?>, _ text: String) {
+        update(key) { config in
+            var limits = config.limits ?? ResourceLimits()
+            limits[keyPath: path] = Int(text.trimmingCharacters(in: .whitespaces)).flatMap { $0 > 0 ? $0 : nil }
+            config.limits = limits.cpuSeconds == nil && limits.memoryMB == nil ? nil : limits
+        }
+    }
+
+    /// Changes the saved config and mirrors the same change into any unsaved Config edits, so
+    /// a later Save can't undo it.
+    private func update(_ key: String, _ change: (inout MenshenConfig) -> Void) {
+        guard let entry = entries.first(where: { $0.id == key }) else { return }
+        var config = entry.config
+        change(&config)
+        do {
+            try config.save(to: entry.configURL)
+        } catch {
+            message = "Couldn't save: \(error)"
+            return
+        }
+        if var draft = drafts[key] {
+            change(&draft)
+            drafts[key] = draft
+        }
+        refresh()
     }
 
     func removeCustom(_ key: String, ruleID: String) {
@@ -405,8 +453,8 @@ final class AppStore {
         if panel.runModal() == .OK, let url = panel.url { newValue = url.path }
     }
 
-    func showProfile(_ key: String) {
+    func showSandboxRules(_ key: String) {
         guard let draft = drafts[key] else { return }
-        profileText = ProfileCompiler(environment: environment).compile(draft)
+        sbplText = SBPLCompiler(environment: environment).compile(draft)
     }
 }

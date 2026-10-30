@@ -19,7 +19,7 @@ import Testing
     @Test func layoutPutsHardeningAfterLearned() throws {
         var config = sampleConfig()
         config.addCustom(.read, fileTypes: ["mp4"])
-        let text = ProfileCompiler(environment: env).compile(config)
+        let text = SBPLCompiler(environment: env).compile(config)
         let lines = text.split(separator: "\n").map(String.init)
         let deny = try #require(lines.firstIndex(of: "(deny default)"))
         let learned = try #require(lines.firstIndex(of: ";; --- learned"))
@@ -38,7 +38,7 @@ import Testing
 
     /// Simple, auditable output: grouped statements, no per-rule comments, nothing redundant.
     @Test func outputIsCompact() throws {
-        let text = ProfileCompiler(environment: env).compile(sampleConfig())
+        let text = SBPLCompiler(environment: env).compile(sampleConfig())
         let lines = text.split(separator: "\n").map(String.init)
         #expect(!text.contains("; L-") && !text.contains("; H-") && !text.contains("seen="), "IDs and counts stay in the JSON")
         #expect(!text.contains("com.apple.windowserver.active"), "covered by the always-on com.apple. prefix")
@@ -51,7 +51,7 @@ import Testing
     /// Merging must never widen anything: every rule's filter is still present with its action.
     @Test func compactingKeepsEveryRule() {
         let config = sampleConfig()
-        let compiler = ProfileCompiler(environment: env)
+        let compiler = SBPLCompiler(environment: env)
         let text = compiler.compile(config)
         for rule in config.rules + config.hardening where !compiler.coveredByAlwaysOn(rule, config) {
             if let filter = compiler.filterText(rule.filter) {
@@ -66,7 +66,7 @@ import Testing
         let i = try #require(config.rules.firstIndex { $0.filter.value == "/Applications/Foo.app" })
         config.rules[i].action = .deny
         config.rules[i].operations = ["file-write*"]
-        let text = ProfileCompiler(environment: env).compile(config)
+        let text = SBPLCompiler(environment: env).compile(config)
         let allowAt = try #require(text.range(of: "(allow file-read*"))
         let denyAt = try #require(text.range(of: "(deny file-write* (subpath \"/Applications/Foo.app\"))"))
         #expect(allowAt.lowerBound < denyAt.lowerBound, "denies come after the section's allows")
@@ -76,7 +76,7 @@ import Testing
         var config = sampleConfig()
         config.logging.network = false
         config.logging.exec = false
-        let text = ProfileCompiler(environment: env).compile(config)
+        let text = SBPLCompiler(environment: env).compile(config)
         #expect(text.contains("(allow network-outbound (remote ip \"*:443\"))"))
         #expect(!text.contains("(remote ip \"*:443\") (with report)"))
         #expect(text.contains("(allow process-exec* (literal \"/bin/sh\"))"))
@@ -86,7 +86,7 @@ import Testing
         #expect(try MenshenConfig.fileExtensions("*.mp4, .MKV mov;mp4") == ["mp4", "mkv", "mov"])
         #expect(throws: MenshenError.self) { try MenshenConfig.fileExtensions("mp4\")(allow default") }
         #expect(throws: MenshenError.self) { try MenshenConfig.fileExtensions("  ") }
-        #expect(ProfileCompiler.caseInsensitive("mp4,mkv,3gp") == "mp4|MP4|mkv|MKV|3gp|3GP")
+        #expect(SBPLCompiler.caseInsensitive("mp4,mkv,3gp") == "mp4|MP4|mkv|MKV|3gp|3GP")
     }
 
     @Test func yourRulesAddAndRemove() throws {
@@ -107,18 +107,18 @@ import Testing
     }
 
     @Test func quotesAreEscaped() {
-        let c = ProfileCompiler(environment: env)
+        let c = SBPLCompiler(environment: env)
         #expect(c.quote("a\"b\\c") == "\"a\\\"b\\\\c\"")
     }
 
     @Test func generatedProfileLoadsInTheKernel() {
-        let text = ProfileCompiler(environment: env).compile(sampleConfig())
-        #expect(ProfileCompiler.validate(text) == nil)
+        let text = SBPLCompiler(environment: env).compile(sampleConfig())
+        #expect(SBPLCompiler.validate(text) == nil)
     }
 
     @Test func validateRejectsBrokenProfiles() {
-        #expect(ProfileCompiler.validate("(version 1)(allow no-such-operation)") != nil)
-        #expect(ProfileCompiler.validate("(version 1)(allow network-outbound (remote ip \"1.2.3.4:443\"))") != nil)
+        #expect(SBPLCompiler.validate("(version 1)(allow no-such-operation)") != nil)
+        #expect(SBPLCompiler.validate("(version 1)(allow network-outbound (remote ip \"1.2.3.4:443\"))") != nil)
     }
 
     @Test func keepEditsCarriesActionsAndLogging() throws {
@@ -149,7 +149,7 @@ import Testing
         #expect(moved.rules.contains { $0.filter.value == "/Applications" || $0.filter.value == "/Applications/Foobar.app/x" },
                 "a sibling app with the same prefix must not move")
         #expect(moved.rules.map(\.id) == config.rules.map(\.id), "IDs stay stable so edits are kept")
-        let text = ProfileCompiler(environment: env).compile(moved)
+        let text = SBPLCompiler(environment: env).compile(moved)
         #expect(text.contains("(allow process-exec* (subpath \"/Applications/.Foo.menshen.app\")"))
     }
 
@@ -216,9 +216,9 @@ import Testing
         let env = MenshenEnvironment(home: home, dataRoot: URL(fileURLWithPath: dir), logsRoot: URL(fileURLWithPath: dir),
                                      userTempRoot: nil)
         var config = Learn.build(target: try ResolvedTarget.resolve("/bin/cat"), events: [], environment: env)
-        let control = ProfileCompiler(environment: env).compile(config)
+        let control = SBPLCompiler(environment: env).compile(config)
         config.addCustom(.read, fileTypes: ["mp4"])
-        let profile = ProfileCompiler(environment: env).compile(config)
+        let profile = SBPLCompiler(environment: env).compile(config)
 
         #expect(cat("\(dir)/media/clip.MP4", control) != 0, "control: not readable without the rule")
         #expect(cat("\(dir)/media/clip.MP4", profile) == 0, "readable in any folder, any letter case")
@@ -238,7 +238,7 @@ import Testing
         var config = Learn.build(target: try ResolvedTarget.resolve("/bin/cat"), events: [], environment: env)
         config.addCustom(.read, category: .media)
         config.addCustom(.read, category: .documents)
-        let profile = ProfileCompiler(environment: env).compile(config)
+        let profile = SBPLCompiler(environment: env).compile(config)
         func readable(_ f: String) -> Bool { cat("\(dir)/stuff/\(f)", profile) == 0 }
 
         #expect(readable("song.MP3") && readable("clip.Mov"), "media in any case mix (case-insensitive volume)")

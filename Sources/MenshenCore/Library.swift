@@ -68,6 +68,38 @@ public enum Library {
         (try? readCapture(url)) ?? []
     }
 
+    /// Everything Menshen keeps for an app: its config, compiled profile, backups, learning
+    /// captures, enforce logs and private temp folder. The app itself is never part of it.
+    public static func files(for key: String, _ environment: MenshenEnvironment) -> [URL] {
+        let fm = FileManager.default
+        let profiles = (try? fm.contentsOfDirectory(at: environment.profilesDir, includingPropertiesForKeys: nil)) ?? []
+        let configFiles = profiles.filter { url in
+            let name = url.lastPathComponent
+            return name == "\(key).json" || name == "\(key).sb" || name.hasPrefix("\(key).bak-")
+        }
+        let folders = [environment.learnDir(key), environment.logsDir(key), environment.privateTemp(key)]
+        return (configFiles + folders).filter { fm.fileExists(atPath: $0.path) }.sorted { $0.path < $1.path }
+    }
+
+    /// Moves everything Menshen keeps for an app to the Trash (recoverable). Refuses while the
+    /// app is replaced, since its launcher still points at this config; restore it first.
+    /// Returns where each item ended up in the Trash.
+    @discardableResult
+    public static func forget(_ key: String, _ environment: MenshenEnvironment) throws -> [URL] {
+        if let swap = Swap.records(environment).first(where: { $0.key == key }) {
+            throw MenshenError.refused("\(swap.appPath) is replaced by a Menshen launcher. Restore it first.")
+        }
+        let items = files(for: key, environment)
+        guard !items.isEmpty else { throw MenshenError.usage("Menshen keeps nothing for \(key)") }
+        var trashed: [URL] = []
+        for url in items {
+            var result: NSURL?
+            try FileManager.default.trashItem(at: url, resultingItemURL: &result)
+            if let result { trashed.append(result as URL) }
+        }
+        return trashed
+    }
+
     // MARK: -
 
     static func countCapture(_ url: URL) -> (Int, Int) {

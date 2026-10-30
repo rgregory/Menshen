@@ -23,7 +23,11 @@ All notable changes are documented here.
   - `AccessSummary` / `RuleText` / `BlockedSummary` (plain-language summaries)
 - Tests: 44 in total. They cover swap round trip, refusals, rollback (mutation-checked), never deleting a foreign bundle, the end-to-end launcher via LaunchServices with a dummy app, `Library`, and the summaries.
 
-### Added: templates, limits and the sanity set
+### Changed: templates are now "profiles"; apps can be removed
+- Templates are called **profiles**: a Profiles card on each app's Dashboard applies them immediately (saved with a backup, mirrored into unsaved Config edits), and `menshen profile` replaces `menshen template`. The config key is `profiles`. "Show Profile" became **Show Sandbox Rules**, and `ProfileCompiler` became `SBPLCompiler` in code, so "profile" means one thing.
+- **Remove from Menshen** (sidebar right-click or Delete, with confirmation; `menshen forget`): a learned app's config, backups, captures, logs and private temp folder go to the Trash. Refused while the app is replaced.
+
+### Added: templates (now profiles), limits and the sanity set
 - **Templates** (`menshen template`, Config switches, a Restrictions card on the Dashboard): offline, temp-only, no-launch, background. They compile after learned and your rules, so they win, and they're kept on re-learn. The dashboard summary reflects them.
 - **Hard limits:** CPU seconds (`ulimit -t`, outside the sandbox) and memory MiB (`taskpolicy -m`, applied *inside* the sandbox, since it doesn't survive sandbox-exec). Kernel-tested.
 - **Sanity set** added to hardening: secrets by name anywhere in home (regex under the home folder), more credential stores, chat-app sessions, personal data. Older configs get every current protection at compile time.

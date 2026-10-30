@@ -60,7 +60,7 @@ public struct MenshenEnvironment: Sendable {
     public func learnDir(_ key: String) -> URL { dataRoot.appendingPathComponent("learn/\(key)") }
     public func logsDir(_ key: String) -> URL { logsRoot.appendingPathComponent(key) }
     public func configURL(_ key: String) -> URL { profilesDir.appendingPathComponent("\(key).json") }
-    /// Private temp folder for the Temp-only template (exported to the app as TMPDIR).
+    /// Private temp folder for the Temp-only profile (exported to the app as TMPDIR).
     public func privateTemp(_ key: String) -> URL { dataRoot.appendingPathComponent("temp/\(key)") }
 
     /// `/private/var/folders/xx/yyy` — parent of the user's T (temp) and C (cache) directories.

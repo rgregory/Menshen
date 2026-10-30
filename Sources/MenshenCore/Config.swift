@@ -145,7 +145,7 @@ public struct MenshenConfig: Codable, Equatable, Sendable {
     /// Built-in sensitive rules. Compiled last, so they win over broader learned allows.
     public var hardening: [Rule]
     /// One-click restrictions on top of what was learned. Kept when the app is re-learned.
-    public var templates: [Template]? = nil
+    public var profiles: [Profile]? = nil
     /// Hard resource limits applied at launch (not sandbox rules).
     public var limits: ResourceLimits? = nil
 
@@ -202,7 +202,7 @@ public struct MenshenConfig: Codable, Equatable, Sendable {
     /// Carries the user's edits (actions, logging toggles) from `previous` into a regenerated config.
     public mutating func keepEdits(from previous: MenshenConfig) {
         logging = previous.logging
-        templates = previous.templates
+        profiles = previous.profiles
         limits = previous.limits
         let actions = Dictionary((previous.rules + previous.hardening).map { ($0.id, $0.action) },
                                  uniquingKeysWith: { first, _ in first })
@@ -283,9 +283,9 @@ extension MenshenConfig {
     }
 }
 
-// MARK: - Templates
+// MARK: - Profiles
 
-public enum Template: String, Codable, CaseIterable, Sendable {
+public enum Profile: String, Codable, CaseIterable, Sendable {
     case offline
     case tempOnly = "temp-only"
     case noLaunch = "no-launch"
