@@ -21,6 +21,8 @@ let package = Package(
         .executable(name: "menshen", targets: ["menshen"]),
         .executable(name: "menshen-launch", targets: ["menshen-launch"]),
         .executable(name: "MenshenApp", targets: ["MenshenApp"]),
+        // For apps built on Menshen's sandboxing, such as Shentu (../shentu).
+        .library(name: "MenshenCore", targets: ["MenshenCore"]),
     ],
     targets: [
         .executableTarget(name: "menshen", dependencies: ["MenshenCore"]),

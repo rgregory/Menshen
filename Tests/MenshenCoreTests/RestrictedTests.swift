@@ -9,8 +9,10 @@ extension KernelTests {
         let dir = "/private/tmp/menshen-restricted-\(UUID().uuidString)"
         let tag = UUID().uuidString.prefix(8)
         var cleanup: [String] = []
+        var drives: [String] = []
         var home: String { dir + "/home" }
         deinit {
+            for drive in drives { Swap.run("/usr/bin/hdiutil", ["detach", drive, "-force"]) }
             for path in cleanup + [dir] { try? FileManager.default.removeItem(atPath: path) }
         }
 
@@ -129,6 +131,99 @@ extension KernelTests {
             let narrow = "(subpath \"\(root)/T\")"
             try #require(profile.contains(narrow))
             #expect(writes(other, profile.replacingOccurrences(of: narrow, with: "(subpath \"\(root)\")")))
+        }
+
+        /// A real external drive: a small disk image, mounted under /Volumes like a USB stick.
+        func mountDrive() throws -> String {
+            let image = dir + "/drive.dmg", name = "MenshenTest-\(tag)"
+            #expect(Swap.run("/usr/bin/hdiutil", ["create", "-quiet", "-size", "4m", "-fs", "HFS+", "-volname", name, image]) == 0)
+            #expect(Swap.run("/usr/bin/hdiutil", ["attach", "-quiet", "-nobrowse", image]) == 0)
+            let mount = "/Volumes/" + name
+            try #require(FileManager.default.fileExists(atPath: mount))
+            drives.append(mount)
+            return mount
+        }
+
+        /// Reads limited to file types in home and on drives, and writes only to the run's own
+        /// temp folder (the options Shentu offers). Every must-fail check has a must-succeed one
+        /// in the same profile, and turning each option off makes its must-fail check succeed.
+        @Test func fileTypesDrivesAndRunTemp() throws {
+            _ = try setUp()
+            let drive = try mountDrive()
+            let fm = FileManager.default
+            try fm.createDirectory(atPath: home + "/Movies", withIntermediateDirectories: true)
+            for file in ["\(home)/Movies/clip.mp4", "\(drive)/clip.mp4", "\(drive)/notes.txt"] {
+                try "x".write(toFile: file, atomically: true, encoding: .utf8)
+            }
+            let scratch = dir + "/run-temp"
+            try fm.createDirectory(atPath: scratch, withIntermediateDirectories: true)
+            let bash = try ResolvedTarget.resolve("/bin/bash")
+            let compiler = SBPLCompiler(environment: env())
+            let box = RestrictedSandbox(ownData: false, readFileTypes: FileCategory.media.extensions,
+                                        limitDrives: true, ephemeralTemp: true)
+            func profile(_ box: RestrictedSandbox) -> String { compiler.restrictedProfile(bash, box, scratch: scratch) }
+            func ok(_ command: String, _ profile: String) -> Bool {
+                Swap.run("/usr/bin/sandbox-exec", ["-p", profile, "/bin/bash", "-c", command]) == 0
+            }
+            func reads(_ file: String) -> String { "{ read -r l; [ \"$l\" = x ]; } < '\(file)'" }
+            func writes(_ file: String) -> String { "echo x > '\(file)'" }
+            let strict = profile(box)
+            #expect(SBPLCompiler.validate(strict) == nil)
+
+            // Must succeed: the chosen type in home and on the drive, and the run's temp folder.
+            #expect(ok(reads("\(home)/Movies/clip.mp4"), strict), "a media file in home")
+            #expect(ok(reads("\(drive)/clip.mp4"), strict), "a media file on the drive")
+            #expect(ok(writes("\(scratch)/f"), strict), "the run's temp folder")
+            // Must fail: other types, and writes anywhere else.
+            #expect(!ok(reads("\(home)/Documents/private.txt"), strict), "another type in home")
+            #expect(!ok(reads("\(drive)/notes.txt"), strict), "another type on the drive")
+            #expect(!ok(writes("\(dir)/outside.txt"), strict), "the shared temp")
+            #expect(!ok(writes("\(home)/Movies/new.mp4"), strict), "home, even a chosen type")
+            #expect(!ok(writes("\(drive)/new.mp4"), strict), "the drive")
+            // Folder listings (bash's glob, as /bin/ls is another program): needed to find the files.
+            func lists(_ folder: String) -> String { "shopt -s nullglob; f=('\(folder)'/*); [ ${#f[@]} -gt 0 ]" }
+            #expect(ok(lists(drive), strict), "folders on the drive are listable")
+            #expect(ok(lists(home + "/Documents"), strict), "folders in home are listable")
+            #expect(!ok(lists(home + "/Documents"), profile(RestrictedSandbox(ownData: false))), "not without file types")
+
+            // Each option off: its must-fail check now succeeds (or its must-succeed one fails).
+            var off = box
+            off.limitDrives = false
+            #expect(ok(reads("\(drive)/notes.txt"), profile(off)), "drives open without limitDrives")
+            off = box
+            off.ephemeralTemp = false
+            #expect(ok(writes("\(dir)/outside.txt"), profile(off)), "shared temp open without ephemeralTemp")
+            off = box
+            off.readFileTypes = []
+            #expect(!ok(reads("\(home)/Movies/clip.mp4"), profile(off)), "no types, no media in home")
+        }
+
+        /// Settings are written by cfprefsd, not the app, so the file-write deny can't stop them:
+        /// with own data off, the preference write itself is denied.
+        @Test func noOwnDataMeansNoSavedSettings() throws {
+            try FileManager.default.createDirectory(atPath: dir + "/bin", withIntermediateDirectories: true)
+            let probe = dir + "/bin/prefprobe"
+            let source = try #require(Bundle.module.url(forResource: "prefprobe", withExtension: "c", subdirectory: "Fixtures"))
+            #expect(Swap.run("/usr/bin/cc", ["-o", probe, source.path, "-framework", "CoreFoundation"]) == 0)
+            let compiler = SBPLCompiler(environment: env())
+            let target = try ResolvedTarget.resolve(probe)
+            func saves(_ box: RestrictedSandbox) -> Bool {
+                let domain = "com.example.menshen-pref-\(tag)-\(box.ownData)"
+                defer {
+                    Swap.run("/usr/bin/defaults", ["delete", domain])
+                    try? FileManager.default.removeItem(atPath: NSHomeDirectory() + "/Library/Preferences/\(domain).plist")
+                }
+                let saved = Swap.run("/usr/bin/sandbox-exec", ["-p", compiler.restrictedProfile(target, box), probe, domain]) == 0
+                return saved && Swap.run("/usr/bin/defaults", ["read", domain, "probe"]) == 0
+            }
+            #expect(!saves(RestrictedSandbox(ownData: false)), "own data off: nothing saved")
+            #expect(saves(RestrictedSandbox(ownData: true)), "control: own data on saves settings")
+        }
+
+        @Test func oldSettingsStillLoad() throws {
+            let old = #"{"network":true,"otherPrograms":false,"ownData":false,"readOnly":[],"readWrite":["~/Work"]}"#
+            let box = try JSONDecoder().decode(RestrictedSandbox.self, from: Data(old.utf8))
+            #expect(box == RestrictedSandbox(network: true, ownData: false, readWrite: ["~/Work"]))
         }
 
         @Test func togglesOpenWhatTheySay() throws {

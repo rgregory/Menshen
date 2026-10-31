@@ -7,6 +7,8 @@ All notable changes are documented here.
 ## [Unreleased] — 0.2.0
 
 ### Added
+- **Shentu support (ADR-010):** MenshenCore is now a library product. Three new Restricted Sandbox options, all off by default: reads in home limited to file types (with folder listings), the same limits on external drives (`/Volumes`), and a temp folder made for each run, exported as TMPDIR and deleted afterwards. Kernel test `RestrictedTests.fileTypesDrivesAndRunTemp` uses a real disk image under /Volumes, with must-succeed controls and each option turned off as the mutation. Settings saved by older versions still load (`oldSettingsStillLoad`).
+- **Own data off now also blocks saved settings:** cfprefsd wrote them on the app's behalf, past the file-write rules. `RestrictedTests.noOwnDataMeansNoSavedSettings` + `prefprobe` fixture, mutation-checked.
 - **Menshen.app**, a native SwiftUI window app built with `scripts/build-app.sh` (no Xcode needed):
   - App icon: the Haiku "Action_Logout" padlock, rendered sharp from its SVG (MIT; `assets/ATTRIBUTION.md`; the license text ships inside the app).
   - **Dashboard:** a plain-language summary per app (files, network, launches, services and settings, sensitive), live counters and blocked attempts while a session runs, and the most-blocked attempts from the last run.

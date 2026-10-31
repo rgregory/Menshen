@@ -17,14 +17,42 @@ public struct RestrictedSandbox: Codable, Equatable, Sendable {
     public var readWrite: [String] = []
     /// Readable, never writable.
     public var readOnly: [String] = []
+    /// File extensions readable anywhere in your home folder (and on drives, with `limitDrives`),
+    /// e.g. a `FileCategory`'s extensions. Stored as the list itself, so it stays auditable.
+    public var readFileTypes: [String] = []
+    /// External drives (`/Volumes`) get the same limits as your home folder: names visible,
+    /// contents only for the folders and file types you chose.
+    public var limitDrives = false
+    /// Writes go only to a fresh folder made for this run (exported as TMPDIR) and deleted when
+    /// the app quits, instead of the shared temp folders. Mac apps ignore TMPDIR
+    /// (NSTemporaryDirectory, reference row 21), so their usual temp writes are blocked.
+    public var ephemeralTemp = false
 
     public init(network: Bool = false, otherPrograms: Bool = false, ownData: Bool = true,
-                readWrite: [String] = [], readOnly: [String] = []) {
+                readWrite: [String] = [], readOnly: [String] = [], readFileTypes: [String] = [],
+                limitDrives: Bool = false, ephemeralTemp: Bool = false) {
         self.network = network
         self.otherPrograms = otherPrograms
         self.ownData = ownData
         self.readWrite = readWrite
         self.readOnly = readOnly
+        self.readFileTypes = readFileTypes
+        self.limitDrives = limitDrives
+        self.ephemeralTemp = ephemeralTemp
+    }
+
+    /// Settings saved before a field existed load with that field's default.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = RestrictedSandbox()
+        network = try c.decodeIfPresent(Bool.self, forKey: .network) ?? d.network
+        otherPrograms = try c.decodeIfPresent(Bool.self, forKey: .otherPrograms) ?? d.otherPrograms
+        ownData = try c.decodeIfPresent(Bool.self, forKey: .ownData) ?? d.ownData
+        readWrite = try c.decodeIfPresent([String].self, forKey: .readWrite) ?? d.readWrite
+        readOnly = try c.decodeIfPresent([String].self, forKey: .readOnly) ?? d.readOnly
+        readFileTypes = try c.decodeIfPresent([String].self, forKey: .readFileTypes) ?? d.readFileTypes
+        limitDrives = try c.decodeIfPresent(Bool.self, forKey: .limitDrives) ?? d.limitDrives
+        ephemeralTemp = try c.decodeIfPresent(Bool.self, forKey: .ephemeralTemp) ?? d.ephemeralTemp
     }
 
     public static func url(_ environment: MenshenEnvironment) -> URL {
@@ -47,8 +75,11 @@ public struct RestrictedSandbox: Codable, Equatable, Sendable {
     /// One-line summary for the UI and the CLI.
     public var summary: String {
         var parts = [network ? "network on" : "no network"]
-        parts.append(readWrite.isEmpty ? "writes only to temp" : "writes to \(readWrite.count) folder\(readWrite.count == 1 ? "" : "s")")
+        let temp = ephemeralTemp ? "a temp folder for this run" : "temp"
+        parts.append(readWrite.isEmpty ? "writes only to \(temp)" : "writes to \(temp) and \(readWrite.count) folder\(readWrite.count == 1 ? "" : "s")")
         if !readOnly.isEmpty { parts.append("reads \(readOnly.count) more") }
+        if !readFileTypes.isEmpty { parts.append("reads \(readFileTypes.count) file type\(readFileTypes.count == 1 ? "" : "s")") }
+        if limitDrives { parts.append("drives limited") }
         if !otherPrograms { parts.append("no other programs") }
         if !ownData { parts.append("no saved data") }
         return parts.joined(separator: " · ")
@@ -90,7 +121,8 @@ extension SBPLCompiler {
     /// sanity set comes last so it wins. Every deny carries a filter: a filter-less deny would
     /// only set the operation's default (ADR-003). The exception is `lsopen`, which the kernel
     /// checks with no path, so no filter matches it (finding 30).
-    public func restrictedProfile(_ target: ResolvedTarget, _ box: RestrictedSandbox) -> String {
+    /// `scratch` is the run's own temp folder when `box.ephemeralTemp` is on.
+    public func restrictedProfile(_ target: ResolvedTarget, _ box: RestrictedSandbox, scratch: String? = nil) -> String {
         let t = target.identity
         let home = environment.home
         let rw = box.readWrite.map(environment.expand).map(realPath)
@@ -120,18 +152,34 @@ extension SBPLCompiler {
         // .env files in your folders (tested). File names in home stay visible: many apps stop
         // working without file-read-metadata. The shared temp `…/T`, not its Darwin folder:
         // that holds every app's caches; the app's own are among its own folders.
-        let temp = [environment.userTempDir, "/private/tmp"].compactMap { $0 } + ["/dev"]
-        out += ["", ";; writes: only temp folders and your read & write folders",
+        // With an ephemeral temp, the run's own folder replaces the shared ones.
+        let temp = (box.ephemeralTemp ? [scratch.map(realPath)] : [environment.userTempDir, "/private/tmp"])
+            .compactMap { $0 } + ["/dev"]
+        let closed = [home] + (box.limitDrives ? ["/Volumes"] : [])
+        out += ["", ";; writes: only \(box.ephemeralTemp ? "this run's temp folder" : "temp folders") and your read & write folders",
                 "(deny file-write* (subpath \"/\"))",
                 statement("allow", ["file-write*"], subpaths(temp), report: false),
-                ";; your home folder: only the folders you chose\(box.ownData ? " and the app's own data" : "")",
-                "(deny file-read* file-write* (subpath \(quote(home))))",
-                "(allow file-read-metadata (subpath \(quote(home))))"]
+                ";; your home folder\(box.limitDrives ? " and drives" : ""): only the folders you chose\(box.ownData ? " and the app's own data" : "")",
+                statement("deny", ["file-read*", "file-write*"], subpaths(closed), report: false),
+                statement("allow", ["file-read-metadata"], subpaths(closed), report: false)]
         if !(rw + own).isEmpty {
             out.append(statement("allow", ["file-write*"], subpaths(rw + own), report: false))
         }
+        if !box.ownData {
+            // cfprefsd writes the app's settings for it, past the file-write rules (tested).
+            out.append(";; no saved settings either: cfprefsd would write them on the app's behalf")
+            out.append("(deny user-preference-write (preference-domain-prefix \"\"))")
+        }
         let readable = [t.path] + rw + ro + own + [home + "/Library/Fonts"]
         out.append(statement("allow", ["file-read*"], subpaths(readable), report: false))
+        // Everything outside home and drives is readable already, so the regex needs no place.
+        // Folders become listable too: without that, the app (and its own Open panel, which
+        // runs in-process for unsandboxed apps) couldn't find the files it may read (tested).
+        let types = box.readFileTypes.filter { !$0.isEmpty && $0.allSatisfy { $0.isLetter || $0.isNumber } }
+        if !types.isEmpty, let filter = filterText(Filter(.fileTypes, types.joined(separator: ","))) {
+            out.append(";; files of the types you chose, and folder listings to find them")
+            out.append(statement("allow", ["file-read*"], [filter, "(vnode-type DIRECTORY)"], report: false))
+        }
         if !box.otherPrograms {
             out += ["", ";; no other programs, nor apps, documents or links opened through LaunchServices",
                     "(deny process-exec* (subpath \"/\"))",

@@ -12,4 +12,5 @@ See `docs/memory/decisions/_TEMPLATE.md` for the ADR format.
 | 2026-10-31 | [0006](memory/decisions/0006-restricted-sandbox.md) | Restricted Sandbox: drop any app to run it, unlearned, with only the access you chose; deny-default base so every block is logged |
 | 2026-10-31 | [0007](memory/decisions/0007-learned-rules-stay-narrow.md) | Learned rules keep the names the kernel reported; the app owns the shared temp and its own Darwin cache folders, not every app's |
 | 2026-10-31 | [0008](memory/decisions/0008-no-other-programs-blocks-lsopen.md) | No other programs also denies `lsopen` (filter-less): apps, documents and links opened through LaunchServices run outside the sandbox |
+| 2026-10-31 | [0010](memory/decisions/0010-shentu-options-in-restricted-sandbox.md) | Restricted Sandbox gains Shentu's options: file-type reads in home and drives, drive limits, a per-run temp folder; own data off also blocks saved settings |
 | 2026-10-29 | [0005](memory/decisions/0005-replace-apps-with-a-launcher.md) | Replace = rename the app to a hidden `.Name.menshen.app` in the same folder and put a launcher in its place; transactional, reversible |
