@@ -12,7 +12,7 @@ Shentu (`../shentu`) is a separate app: drop a Mac app on it, pick options in a 
 
 ## Decision
 
-Shentu depends on MenshenCore (a new library product) and adds no sandbox logic of its own. `RestrictedSandbox` gains three fields, all off by default, so Menshen's behavior and saved settings are unchanged:
+Shentu adds no sandbox logic of its own. It's standalone: it carries an unmodified copy of MenshenCore (`Sources/MenshenCore`, with the source commit and a drift check in `VENDORED.md`). MenshenCore is also exposed as a library product. `RestrictedSandbox` gains three fields, all off by default, so Menshen's behavior and saved settings are unchanged:
 
 - `readFileTypes`: extensions readable anywhere in home (and on drives). It reuses `filterText(.fileTypes)`. Folders become listable as well (`vnode-type DIRECTORY`); without that, the app and its in-process Open panel can't find the files it may read.
 - `limitDrives`: `/Volumes` gets the same deny, metadata and allow rules as home.
@@ -28,5 +28,5 @@ With own data off, `user-preference-write` is now denied too. cfprefsd writes se
 
 ## Alternatives Considered
 
-- Copy the code into Shentu: rejected, the copies would drift.
+- Depend on `../menshen` as a local package: rejected by the user. Shentu must build on its own. The copy is kept unmodified, and a `diff -r` shows any drift.
 - A mode inside Menshen.app: the user chose a standalone app.
