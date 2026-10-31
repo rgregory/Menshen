@@ -45,3 +45,9 @@
 **What happened:** The templates wrote `(deny file-write*)` *after* the learned allows, which looks correct if later rules win. The kernel still allowed the learned write. A deny with no filter is only the operation's default, and any filtered allow beats it. Reviewing the profile text would never have caught this; the kernel integration test did.
 
 **Rule:** Every restriction Menshen adds gets a kernel test that runs a real process and checks for EPERM, with a control showing the same action succeeds without the restriction.
+
+## 2026-10-30 · A count of zero can mean the check couldn't look
+
+**What happened:** To confirm a test left nothing in the user's Trash, I ran `ls ~/.Trash | wc -l` and reported 0. In fact `ls` was refused ("Operation not permitted": this session can't list the Trash), so `wc` counted zero lines of nothing. The claim happened to be true, but it was unverified.
+
+**Rule:** Never pipe a check straight into a count. Check the command's own exit status first, and confirm with a positive control (create a known item, see it, remove it) before reporting "none".
