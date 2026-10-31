@@ -8,8 +8,8 @@ public struct RestrictedSandbox: Codable, Equatable, Sendable {
     public var network = false
     /// Starting other programs. The app's own helpers inside its bundle always work.
     public var otherPrograms = false
-    /// The app's own folders in ~/Library (settings, caches, saved state), guessed from its
-    /// bundle ID and name. Off means it can't keep anything between runs.
+    /// The app's own folders in ~/Library (settings, caches, saved state) and in the Darwin
+    /// caches, guessed from its bundle ID and name. Off means it can't keep anything between runs.
     public var ownData = true
     /// The only places outside temp folders it can write, and the only places in your home
     /// folder it can read.
@@ -53,9 +53,10 @@ public struct RestrictedSandbox: Codable, Equatable, Sendable {
         return parts.joined(separator: " · ")
     }
 
-    /// The app's own folders under ~/Library, by bundle ID and by name.
-    static func ownFolders(_ target: TargetIdentity, home: String) -> [String] {
-        let lib = home + "/Library"
+    /// The app's own folders under ~/Library, by bundle ID and by name, and its Darwin cache
+    /// folders (`…/C/<bundle ID>`, `…/0/<bundle ID>`), never the whole Darwin folder (ADR-007).
+    static func ownFolders(_ target: TargetIdentity, _ environment: MenshenEnvironment) -> [String] {
+        let lib = environment.home + "/Library"
         var names = [target.name]
         if let id = target.bundleId { names.insert(id, at: 0) }
         var folders: [String] = []
@@ -65,6 +66,7 @@ public struct RestrictedSandbox: Codable, Equatable, Sendable {
         if let id = target.bundleId {
             folders += ["\(lib)/Containers/\(id)", "\(lib)/HTTPStorages/\(id)", "\(lib)/WebKit/\(id)",
                         "\(lib)/Saved Application State/\(id).savedState", "\(lib)/Preferences/\(id).plist"]
+                + environment.userAppAreas.map { "\($0)/\(id)" }
         }
         return folders
     }
@@ -91,7 +93,7 @@ extension SBPLCompiler {
         let home = environment.home
         let rw = box.readWrite.map(environment.expand).map(realPath)
         let ro = box.readOnly.map(environment.expand).map(realPath)
-        let own = box.ownData ? RestrictedSandbox.ownFolders(t, home: home) : []
+        let own = box.ownData ? RestrictedSandbox.ownFolders(t, environment) : []
         func subpaths(_ paths: [String]) -> [String] { paths.map { "(subpath \(quote($0)))" } }
         let ownBundle = t.path == t.executable ? "(literal \(quote(t.executable)))" : "(subpath \(quote(t.path)))"
 
@@ -114,8 +116,9 @@ extension SBPLCompiler {
         // `file-read*` as the sanity set's denies: a rule naming a specific operation
         // (file-read-data) beats a wildcard one whatever the order, so it would have re-opened
         // .env files in your folders (tested). File names in home stay visible: many apps stop
-        // working without file-read-metadata.
-        let temp = [environment.userTempRoot, "/private/tmp"].compactMap { $0 } + ["/dev"]
+        // working without file-read-metadata. The shared temp `…/T`, not its Darwin folder:
+        // that holds every app's caches; the app's own are among its own folders.
+        let temp = [environment.userTempDir, "/private/tmp"].compactMap { $0 } + ["/dev"]
         out += ["", ";; writes: only temp folders and your read & write folders",
                 "(deny file-write* (subpath \"/\"))",
                 statement("allow", ["file-write*"], subpaths(temp), report: false),

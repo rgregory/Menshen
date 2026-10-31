@@ -38,6 +38,7 @@ All notable changes are documented here.
 - Dashboard: **Profiles** and a new **File access** card sit right under the status bar. File access has a switch each for Media, Images and Documents (`menshen allow … media`), your other rules with a remove button, and Add File Types or Folder…; changes save at once. Profile switches line up in one column. **Replace…/Restore…** moved into the status bar, with the team and code hash in its status line.
 - Tests: every suite that runs sandboxed processes is nested in a serialized `KernelTests` parent. Concurrent learn runs flooded the kernel's reports and made other tests' logs come up empty (`learnThenEnforce` failed 2–4 runs in 8; now 8 of 8 pass). A full run takes about 15 s instead of 7.
 - Kernel tests (`RestrictedTests`): an escape probe as the dropped app, with an unsandboxed control and a mutation check, plus logging through the real session path. ADR-006.
+- **Darwin folder:** a dropped app writes to the shared temp folder (`…/T`) and, with its own data on, its own `…/C/<bundle ID>` and `…/0/<bundle ID>`, no longer the whole per-user Darwin folder with every app's caches (as ADR-007 did for learned profiles). Kernel test with a control, mutation-checked.
 
 ### Changed: instant "can it be wrapped?" check
 - Each app is checked once, from its signature (no launch), and the result is kept until the app changes on disk. The sidebar shows **Already sandboxed** or **Apple app** right away for apps Menshen can't wrap. Previously the check ran on every redraw, several times a second during a live session.

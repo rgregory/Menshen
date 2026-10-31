@@ -7,12 +7,16 @@ extension KernelTests {
     /// trying to reach things; a control run under `(allow default)` proves every step can succeed.
     @Suite final class RestrictedTests {
         let dir = "/private/tmp/menshen-restricted-\(UUID().uuidString)"
+        let tag = UUID().uuidString.prefix(8)
+        var cleanup: [String] = []
         var home: String { dir + "/home" }
-        deinit { try? FileManager.default.removeItem(atPath: dir) }
+        deinit {
+            for path in cleanup + [dir] { try? FileManager.default.removeItem(atPath: path) }
+        }
 
-        func env() -> MenshenEnvironment {
+        func env(userTempRoot: String? = nil) -> MenshenEnvironment {
             MenshenEnvironment(home: home, dataRoot: URL(fileURLWithPath: dir + "/data"),
-                               logsRoot: URL(fileURLWithPath: dir + "/logs"), userTempRoot: nil)
+                               logsRoot: URL(fileURLWithPath: dir + "/logs"), userTempRoot: userTempRoot)
         }
 
         /// Builds the probe and a home with a work folder (read & write), a reference folder
@@ -93,6 +97,38 @@ extension KernelTests {
                     "control: the shell runs, writes temp and reads a folder you chose")
             #expect(boxedSh("echo x > '\(home)/Reference/new.txt'") != 0, "read-only folder is not writable")
             #expect(boxedSh("{ read -r l; [ \"$l\" = x ]; } < '\(home)/Work/.env'") != 0, "secrets stay blocked inside a folder you chose")
+        }
+
+        /// The Darwin folder holds every app's caches: the app writes to the shared temp and its own
+        /// cache folders, never another app's (ADR-007, as for learned profiles).
+        @Test func darwinFolderGivesOnlyTheAppsOwnCaches() throws {
+            let root = try #require(MenshenEnvironment.current().userTempRoot)
+            let id = "com.example.menshen-test-\(tag)"
+            let own = ["\(root)/C/\(id)", "\(root)/0/\(id)"]
+            let other = "\(root)/C/com.example.other-\(tag)"
+            let temp = "\(root)/T/menshen-test-\(tag)"
+            for folder in own + [other, temp] {
+                cleanup.append(folder)
+                try FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
+            }
+            var app = try ResolvedTarget.resolve("/bin/bash")
+            app.identity.bundleId = id  // bash playing an app whose caches are named after its bundle ID
+            let compiler = SBPLCompiler(environment: env(userTempRoot: root))
+            let profile = compiler.restrictedProfile(app, RestrictedSandbox())
+            func writes(_ folder: String, _ profile: String) -> Bool {
+                Swap.run("/usr/bin/sandbox-exec", ["-p", profile, "/bin/bash", "-c", "echo x > '\(folder)/f'"]) == 0
+            }
+
+            #expect(writes(own[0], profile), "its own cache folder")
+            #expect(writes(own[1], profile), "its own 0 folder")
+            #expect(writes(temp, profile), "the shared temp folder")
+            #expect(!writes(other, profile), "another app's caches stay closed")
+            #expect(!writes(own[0], compiler.restrictedProfile(app, RestrictedSandbox(ownData: false))), "no own data, no caches")
+
+            // Control: the whole Darwin folder, as the temp allow had it before.
+            let narrow = "(subpath \"\(root)/T\")"
+            try #require(profile.contains(narrow))
+            #expect(writes(other, profile.replacingOccurrences(of: narrow, with: "(subpath \"\(root)\")")))
         }
 
         @Test func togglesOpenWhatTheySay() throws {
