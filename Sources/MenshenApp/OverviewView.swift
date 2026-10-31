@@ -13,7 +13,7 @@ struct OverviewView: View {
             VStack(alignment: .leading, spacing: 12) {
                 if learned.isEmpty {
                     ContentUnavailableView("No learned apps yet", systemImage: "square.grid.2x2",
-                                           description: Text("Learn an app, or drop one on the drop zone to run it restricted."))
+                                           description: Text("Learn an app and it shows up here."))
                 }
                 ForEach(learned) { item in
                     OverviewRow(store: store, item: item, entry: item.entry!)

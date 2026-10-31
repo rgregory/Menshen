@@ -6,9 +6,11 @@ All notable changes are documented here.
 
 ## [Unreleased] — 0.2.0
 
+### Removed: Restricted Sandbox
+- Dropping an app on Menshen's Dock icon or the sidebar drop zone, **Run Restricted**, the Restricted Sandbox settings sheet and `menshen box` are gone, with `RestrictedSandbox`, `restrictedProfile` and `Enforce.runRestricted`. Apps are confined by learning, then enforcing. ADR-006 is withdrawn; a saved `restricted-sandbox.json` is no longer read and can be deleted.
+- Menshen.app no longer registers as a viewer for apps (`CFBundleDocumentTypes`), and MenshenCore is no longer a library product.
+
 ### Added
-- **Shentu support (ADR-010):** MenshenCore is now a library product. Three new Restricted Sandbox options, all off by default: reads in home limited to file types (with folder listings), the same limits on external drives (`/Volumes`), and a temp folder made for each run, exported as TMPDIR and deleted afterwards. Kernel test `RestrictedTests.fileTypesDrivesAndRunTemp` uses a real disk image under /Volumes, with must-succeed controls and each option turned off as the mutation. Settings saved by older versions still load (`oldSettingsStillLoad`).
-- **Own data off now also blocks saved settings:** cfprefsd wrote them on the app's behalf, past the file-write rules. `RestrictedTests.noOwnDataMeansNoSavedSettings` + `prefprobe` fixture, mutation-checked.
 - **Menshen.app**, a native SwiftUI window app built with `scripts/build-app.sh` (no Xcode needed):
   - App icon: the Haiku "Action_Logout" padlock, rendered sharp from its SVG (MIT; `assets/ATTRIBUTION.md`; the license text ships inside the app).
   - **Dashboard:** a plain-language summary per app (files, network, launches, services and settings, sensitive), live counters and blocked attempts while a session runs, and the most-blocked attempts from the last run.
@@ -30,8 +32,8 @@ All notable changes are documented here.
 - Tests: `GeneralizerTests.readsOfYourFilesCollapseToTheirFolder` (each boundary) and `NarrowingTests.readsOfYourFilesCoverTheirFolder` (kernel: a file never opened is readable, a `.env` next to it isn't, a learned file as control). Both mutation-checked. ADR-009. Run `menshen rebuild <app>` to apply it to a config.
 
 ### Fixed: "No other programs" could be bypassed through LaunchServices
-- With `lsopen` learned (Fastpotify has it, to open its login page), a confined app could ask macOS to open another app, a document or a link. The opened app runs outside the sandbox, so a `.command` file could run unconfined in Terminal. The no-launch profile and the Restricted Sandbox's "no other programs" now deny `lsopen` too.
-- Cost: under either, links no longer open in the browser. Seatbelt can't tell links from apps (`lsopen` carries no path or URL), so no narrower rule exists. The profile text and the Restricted toggle ("Start other programs and open links") say so.
+- With `lsopen` learned (Fastpotify has it, to open its login page), a confined app could ask macOS to open another app, a document or a link. The opened app runs outside the sandbox, so a `.command` file could run unconfined in Terminal. The no-launch profile now denies `lsopen` too.
+- Cost: under it, links no longer open in the browser. Seatbelt can't tell links from apps (`lsopen` carries no path or URL), so no narrower rule exists. The profile text says so.
 - Kernel tests (`LSOpenTests`, `lsopenprobe` fixture): the probe opens a self-built dummy app, never a real one. Unsandboxed control, a control profile without the restriction (the dummy starts from launchd, unsandboxed), and a mutation check. ADR-008, reference row 31.
 
 ### Changed: learned rules stay as narrow as what the kernel reported
@@ -40,16 +42,11 @@ All notable changes are documented here.
 - **`menshen rebuild <app>`** regenerates a config from its saved learn captures without running the app, keeping your rules, profiles, limits, switches and switched-off rules (backed up first; refuses if a capture is missing). Run it on configs learned before this change. A replaced app's launcher can't read rebuilt configs until it's refreshed (Restore, then Replace).
 - Kernel tests (`NarrowingTests`, `nameprobe` fixture): another app's cache folder, shared memory, global service registration and sysctl writes are blocked unless learned, each with a control that passes without the restriction; mutation-checked. ADR-007.
 
-### Added: Restricted Sandbox (drop an app to run it confined)
-- Choose once what dropped apps may do (sidebar drop zone → Settings…, or the toolbar lock): network on/off, other programs on/off, its own `~/Library` data on/off, **read & write folders** and **read-only folders**. Everything else in your home folder is unreadable, writes go only to those folders and temp, and the sanity set is always blocked, even inside your folders.
-- **Drop any app** on Menshen's Dock icon or the drop zone and it runs right away in that sandbox. No learning; blocked attempts are logged and shown live on its Dashboard. Unlearned apps also get **Run Restricted**.
-- CLI: `menshen box <App> [--network] [--programs] [--no-own-data] [--rw DIR]… [--ro DIR]… [--save]`.
+### Added: Overview tab, Dashboard changes
 - The Dashboard counts a blocked connection as network activity and a blocked launch as a launch (they showed only under Blocked, with "0 network").
 - **Overview** tab (opens first): every learned app on one screen with its newest run (live while running): events, blocked, network, disk, launches, services. On the right, switches for **Network**, **Write files** and **Other programs** (on = allowed; off turns on Offline, Temp-only or No other programs). Click an app to open its Dashboard.
 - Dashboard: **Profiles** and a new **File access** card sit right under the status bar. File access has a switch each for Media, Images and Documents (`menshen allow … media`), your other rules with a remove button, and Add File Types or Folder…; changes save at once. Profile switches line up in one column. **Replace…/Restore…** moved into the status bar, with the team and code hash in its status line.
 - Tests: every suite that runs sandboxed processes is nested in a serialized `KernelTests` parent. Concurrent learn runs flooded the kernel's reports and made other tests' logs come up empty (`learnThenEnforce` failed 2–4 runs in 8; now 8 of 8 pass). A full run takes about 15 s instead of 7.
-- Kernel tests (`RestrictedTests`): an escape probe as the dropped app, with an unsandboxed control and a mutation check, plus logging through the real session path. ADR-006.
-- **Darwin folder:** a dropped app writes to the shared temp folder (`…/T`) and, with its own data on, its own `…/C/<bundle ID>` and `…/0/<bundle ID>`, no longer the whole per-user Darwin folder with every app's caches (as ADR-007 did for learned profiles). Kernel test with a control, mutation-checked.
 
 ### Changed: instant "can it be wrapped?" check
 - Each app is checked once, from its signature (no launch), and the result is kept until the app changes on disk. The sidebar shows **Already sandboxed** or **Apple app** right away for apps Menshen can't wrap. Previously the check ran on every redraw, several times a second during a live session.

@@ -47,14 +47,8 @@ struct DashboardView: View {
                             Text("Menshen hasn't learned \(item.name) yet.").font(.headline)
                             Text("Learning runs it with everything allowed and records what it does. Use it normally, then quit it. Menshen then writes a config that blocks everything else, plus sensitive locations even if the app touched them.")
                                 .foregroundStyle(.secondary)
-                            HStack {
-                                Button("Learn \(item.name)") { store.learn(item) }
-                                Button("Run Restricted") { store.runRestricted(item) }
-                                    .help("No learning: \(store.restricted.summary). Secrets are always blocked.")
-                            }
-                            .disabled(problem != nil || session?.running == true)
-                            Text("Or run it now in your Restricted Sandbox (\(store.restricted.summary)). Dropping an app on Menshen's Dock icon or the drop zone does the same.")
-                                .font(.caption).foregroundStyle(.secondary)
+                            Button("Learn \(item.name)") { store.learn(item) }
+                                .disabled(problem != nil || session?.running == true)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(6)
@@ -100,13 +94,9 @@ struct StatusStrip: View {
                     if let entry = item.entry {
                         ReplaceButton(store: store, item: item, entry: entry)
                     }
-                    if item.entry == nil {
-                        Button("Run Restricted") { store.runRestricted(item) }
-                            .buttonStyle(.borderedProminent)
-                    } else {
-                        Button("Enforce") { store.enforce(item) }
-                            .buttonStyle(.borderedProminent)
-                    }
+                    Button("Enforce") { store.enforce(item) }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(item.entry == nil)
                 }
             }
         }

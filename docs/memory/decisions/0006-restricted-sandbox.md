@@ -1,6 +1,6 @@
 # ADR-006: Restricted Sandbox for apps that haven't been learned
 
-**Status**: Accepted
+**Status**: Withdrawn (2026-10-31). The feature was removed: `RestrictedSandbox`, `menshen box`, the drop zone and Dock-icon drops are gone. Apps are confined by learning, then enforcing. Kept for the findings in Rationale.
 
 **Date**: 2026-10-31
 

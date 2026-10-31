@@ -59,28 +59,6 @@ menshen profile /Applications/VLC.app --none                    # clear profiles
 
 The sandbox itself can't cap CPU or memory; those come from `taskpolicy` and `ulimit` at launch. A "max 50% CPU" cap isn't offered: macOS has no such control, and it would need a pause/resume watchdog.
 
-## Restricted Sandbox: drop an app to run it confined
-
-For an app you haven't learned (or don't trust), choose once what it may do, then **drop it on Menshen's Dock icon** or the drop zone at the bottom of the sidebar. It runs right away with only that access:
-
-| Setting | Default |
-|---|---|
-| Network | off |
-| Start other programs | off |
-| Its own settings and caches in `~/Library` | on |
-| Read & write folders | none: it writes only to temp |
-| Read-only folders | none: nothing else in your home folder is readable |
-
-Secrets (SSH keys, `.env` files, keychains, browser and chat data) stay blocked even inside folders you chose. Everything it was blocked from is logged and shown on its Dashboard. From the command line:
-
-```sh
-menshen box /Applications/Foo.app --rw ~/Work --ro ~/Reference   # these settings, this run
-menshen box /Applications/Foo.app --rw ~/Work --save             # and keep them for drops
-menshen box /Applications/Foo.app                                # the saved settings
-```
-
-This is Seatbelt, not a virtual machine: a kernel exploit could escape it. See [ADR-006](docs/memory/decisions/0006-restricted-sandbox.md).
-
 ## Replacing an app
 
 `menshen replace /Applications/VLC.app` (or **Replace…** in the app):

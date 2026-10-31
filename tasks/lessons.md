@@ -78,7 +78,7 @@
 
 ## 2026-10-31 · A mutation that breaks the profile proves nothing
 
-**What happened:** To mutation-check Shentu's home rule, I cut `(deny file-read* file-write*\n (subpath HOME)` out of a deny statement that had two filters. The leftover `(subpath "/Volumes"))` made the profile unloadable, so sandbox-exec failed and the "must now succeed" read failed for the wrong reason. It looked like the test was broken, not the mutation.
+**What happened:** To mutation-check a home rule, I cut `(deny file-read* file-write*\n (subpath HOME)` out of a deny statement that had two filters. The leftover `(subpath "/Volumes"))` made the profile unloadable, so sandbox-exec failed and the "must now succeed" read failed for the wrong reason. It looked like the test was broken, not the mutation.
 
 **Rule:** Mutate by pointing a filter somewhere harmless (`/nonexistent`) or by removing a whole statement, and require that the mutated text still contains what you replaced. A mutated profile has to load. Otherwise the check measures a syntax error.
 

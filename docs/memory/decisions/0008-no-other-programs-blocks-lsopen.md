@@ -6,11 +6,11 @@
 
 ## Context
 
-No other programs (the no-launch profile, and the Restricted Sandbox with other programs off) denied `process-exec*`. Learned configs can still hold a filter-less `lsopen` allow: Fastpotify's does, to open its login page in the browser. The kernel test (reference row 31) showed that with `lsopen` allowed, a confined process can ask LaunchServices to open any app it can read. The app then starts from launchd, outside the sandbox, and the same goes for a URL's handler app. A `.command` file opened this way would run in Terminal unconfined.
+No other programs (the no-launch profile) denied `process-exec*`. Learned configs can still hold a filter-less `lsopen` allow: Fastpotify's does, to open its login page in the browser. The kernel test (reference row 31) showed that with `lsopen` allowed, a confined process can ask LaunchServices to open any app it can read. The app then starts from launchd, outside the sandbox, and the same goes for a URL's handler app. A `.command` file opened this way would run in Terminal unconfined.
 
 ## Decision
 
-No other programs adds a filter-less `(deny lsopen)` after the learned rules, in both the compiled profile and the Restricted Sandbox. The profile and toggle text say that links won't open in the browser.
+No other programs adds a filter-less `(deny lsopen)` after the learned rules in the compiled profile. The profile text says that links won't open in the browser.
 
 ## Rationale
 

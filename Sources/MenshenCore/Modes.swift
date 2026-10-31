@@ -46,8 +46,6 @@ public struct EnforceSummary: Sendable {
     public var outcome: Runner.Outcome
     public var drained: Bool
     public var streamNotices: Int
-    /// The run's own temp folder (ephemeral temp), already deleted when this is returned.
-    public var tempFolder: String? = nil
 }
 
 public enum Learn {
@@ -238,44 +236,6 @@ public enum Enforce {
         return try logged(profileURL: profileURL, target: target, options: options, control: control,
                           logging: config.logging, ownFolders: config.anchors.map(environment.expand),
                           environment: environment, say: say)
-    }
-
-    /// The Restricted Sandbox, no learning needed: any app runs with only the access you chose
-    /// (see `RestrictedSandbox`), and everything it was blocked from is logged.
-    public static func runRestricted(
-        _ options: EnforceOptions,
-        sandbox: RestrictedSandbox,
-        environment: MenshenEnvironment = .current(),
-        say: @escaping @Sendable (String) -> Void = { _ in }
-    ) throws -> EnforceSummary {
-        let target = try ResolvedTarget.resolve(Swap.resolveOriginal(options.target))
-        try target.preflight()
-        let fm = FileManager.default
-        var control = options.control
-        var scratch: String?
-        if sandbox.ephemeralTemp {
-            let base = environment.userTempDir ?? "/private/tmp"
-            let dir = realPath(base) + "/menshen-run-\(target.identity.key)-\(UUID().uuidString.prefix(8))"
-            try fm.createDirectory(atPath: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-            scratch = dir
-            control.launch.environment["TMPDIR"] = dir + "/"
-        }
-        defer { if let scratch { try? fm.removeItem(atPath: scratch) } }
-
-        let text = SBPLCompiler(environment: environment).restrictedProfile(target, sandbox, scratch: scratch)
-        if let error = SBPLCompiler.validate(text) {
-            throw MenshenError.failed("the Restricted Sandbox profile doesn't load:\n\(error)")
-        }
-        try fm.ensureDirectory(environment.profilesDir)
-        let profileURL = environment.profilesDir.appendingPathComponent("\(target.identity.key).restricted.sb")
-        try text.write(to: profileURL, atomically: true, encoding: .utf8)
-        say("running \(target.identity.name) in the Restricted Sandbox: \(sandbox.summary).")
-        if let scratch { say("temp folder for this run (deleted when it quits): \(scratch)") }
-        var summary = try logged(profileURL: profileURL, target: target, options: options, control: control,
-                                 logging: LoggingSettings(), ownFolders: sandbox.readWrite.map(environment.expand),
-                                 environment: environment, say: say)
-        summary.tempFolder = scratch
-        return summary
     }
 
     /// Runs the target under a profile and writes every denial (and reported allow) to a new log.

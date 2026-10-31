@@ -7,7 +7,6 @@ let usage = """
     USAGE
       menshen learn   <App.app | binary> [--duration 10m] [--merge] [--config PATH] [-- app-args…]
       menshen enforce <App.app | binary | config.json> [--duration 10m] [--config PATH] [--allow-changed] [-- app-args…]
-      menshen box     <App.app | binary> [--network] [--programs] [--no-own-data] [--rw DIR]… [--ro DIR]… [--save] [-- app-args…]
       menshen rebuild <App.app | binary | config.json> [--config PATH]
       menshen show    <App.app | binary | config.json> [--config PATH]
       menshen allow   <App.app | config.json> [--write] CATEGORY… | TYPES… | FOLDER…   e.g. allow VLC.app media
@@ -23,11 +22,6 @@ let usage = """
              persistence locations are denied even if the app touched them; those are FLAGGED).
     enforce  Run the app under the config. Denials and risky allows (network, process
              launches, writes outside the app's folders) go to a JSONL log.
-    box      Run any app in the Restricted Sandbox, no learning needed: no network, nothing in
-             your home folder except the folders you give (--rw read & write, --ro read only)
-             and the app's own data, writes only there and in temp, no other programs, and
-             secrets always blocked. With no options, uses the settings saved from Menshen.app;
-             --save stores the options given as those settings.
     rebuild  Regenerate the config from its saved learn captures, without running the app, so
              it picks up improvements in how Menshen turns reports into rules. Keeps your
              rules, profiles, limits and switches. The previous config is backed up.
@@ -57,13 +51,6 @@ struct Parsed {
     var appArgs: [String] = []
     var duration: TimeInterval?
     var merge = false
-    var network = false
-    var programs = false
-    var noOwnData = false
-    var rw: [String] = []
-    var ro: [String] = []
-    var save = false
-    var boxOptions = false
     var allowChanged = false
     var config: URL?
     var extra: [String] = []
@@ -98,19 +85,6 @@ func parse(_ argv: [String]) throws -> Parsed {
             guard let v = args.popFirst() else { throw MenshenError.usage("--config needs a path") }
             p.config = URL(fileURLWithPath: (v as NSString).expandingTildeInPath)
         case "--merge": p.merge = true
-        case "--network": p.network = true; p.boxOptions = true
-        case "--programs": p.programs = true; p.boxOptions = true
-        case "--no-own-data": p.noOwnData = true; p.boxOptions = true
-        case "--save": p.save = true
-        case "--rw", "--ro":
-            guard let v = args.popFirst() else { throw MenshenError.usage("\(arg) needs a folder") }
-            let path = realPath((v as NSString).expandingTildeInPath)
-            var isDir: ObjCBool = false
-            guard FileManager.default.fileExists(atPath: path, isDirectory: &isDir), isDir.boolValue else {
-                throw MenshenError.usage("not a folder: \(v)")
-            }
-            if arg == "--rw" { p.rw.append(path) } else { p.ro.append(path) }
-            p.boxOptions = true
         case "--allow-changed": p.allowChanged = true
         case "--write": p.write = true
         case "--none": p.none = true
@@ -301,27 +275,6 @@ func runShow(_ p: Parsed, _ target: String) throws -> Int32 {
     return 0
 }
 
-func runBox(_ p: Parsed, _ target: String) throws -> Int32 {
-    let env = MenshenEnvironment.current()
-    var box = RestrictedSandbox.load(env)
-    if p.boxOptions {
-        box = RestrictedSandbox(network: p.network, otherPrograms: p.programs, ownData: !p.noOwnData,
-                                readWrite: p.rw.map(env.abbreviate), readOnly: p.ro.map(env.abbreviate))
-    }
-    if p.save {
-        try box.save(env)
-        say("saved as the Restricted Sandbox settings: \(RestrictedSandbox.url(env).path)")
-    }
-    var options = EnforceOptions(target: target)
-    options.arguments = p.appArgs
-    options.duration = p.duration
-    options.control = SessionControl(forwardSignals: true)
-    let s = try Enforce.runRestricted(options, sandbox: box, environment: env, say: say)
-    say("done. \(s.denials) blocked (\(s.uniqueDenials) distinct). Log: \(s.logURL.path)")
-    if s.outcome.stoppedByMenshen { return 0 }
-    return s.outcome.wasSignaled ? 128 + s.outcome.status : s.outcome.status
-}
-
 let argv = Array(CommandLine.arguments.dropFirst())
 do {
     if argv.isEmpty || ["-h", "--help", "help"].contains(argv[0]) {
@@ -339,7 +292,6 @@ do {
     switch p.command {
     case "learn": status = try runLearn(p, target)
     case "enforce": status = try runEnforce(p, target)
-    case "box": status = try runBox(p, target)
     case "rebuild": status = try runRebuild(p, target)
     case "show": status = try runShow(p, target)
     case "allow": status = try runAllow(p, target)
