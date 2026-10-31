@@ -178,6 +178,31 @@ func allow(_ op: String, _ target: String, count: Int = 1) -> SandboxEvent {
         #expect(!c.rules.contains { $0.filter.kind == .subpath && $0.filter.value == "~" })
     }
 
+    /// Reads of your files collapse to their folder sooner (ADR-009). Other apps' data, hidden
+    /// folders, whole volumes and writes keep the usual threshold.
+    @Test func readsOfYourFilesCollapseToTheirFolder() {
+        let videos = "/Volumes/media/Home Videos"
+        let c = build([
+            allow("file-read-data", videos), allow("file-read-data", "\(videos)/a.MOV", count: 3),
+            allow("file-read-data", "\(videos)/b.MOV", count: 12),
+            allow("file-read-data", "\(testHome)/Projects/notes/a.txt"), allow("file-read-data", "\(testHome)/Projects/notes/b.txt"),
+            allow("file-read-data", "\(testHome)/Projects/single/only.txt"),
+            allow("file-read-data", "/Volumes/media/a.MOV"), allow("file-read-data", "/Volumes/media/b.MOV"),
+            allow("file-read-data", "\(testHome)/Library/Application Support/Other/a"),
+            allow("file-read-data", "\(testHome)/Library/Application Support/Other/b"),
+            allow("file-read-data", "\(testHome)/.config/tool/a"), allow("file-read-data", "\(testHome)/.config/tool/b"),
+            allow("file-write-create", "\(testHome)/Projects/out/a.txt"), allow("file-write-create", "\(testHome)/Projects/out/b.txt"),
+        ])
+        #expect(learned(c, "file-read*", .subpath, videos)?.seen == 16, "the folder's listing and both videos become one rule")
+        #expect(!c.rules.contains { $0.filter.kind == .literal && ($0.filter.value ?? "").hasPrefix(videos) })
+        #expect(learned(c, "file-read*", .subpath, "~/Projects/notes") != nil, "two files in a home folder")
+        #expect(learned(c, "file-read*", .literal, "~/Projects/single/only.txt") != nil, "one file stays exact")
+        #expect(learned(c, "file-read*", .literal, "/Volumes/media/a.MOV") != nil, "never a whole volume")
+        #expect(learned(c, "file-read*", .literal, "~/Library/Application Support/Other/a") != nil, "other apps' data stays exact")
+        #expect(learned(c, "file-read*", .literal, "~/.config/tool/a") != nil, "hidden folders stay exact")
+        #expect(learned(c, "file-write*", .literal, "~/Projects/out/a.txt") != nil, "writes keep the usual threshold")
+    }
+
     @Test func systemReadsCollapseButSystemWritesDoNot() {
         let c = build([
             allow("file-read-data", "/usr/lib/libfoo.dylib"),

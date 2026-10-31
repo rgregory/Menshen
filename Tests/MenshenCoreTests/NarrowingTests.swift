@@ -34,6 +34,25 @@ extension KernelTests {
                                userTempRoot: userTempRoot)
         }
 
+        /// Reads of your files collapse to their folder (ADR-009): a file the app never opened while
+        /// learning is readable, but a .env next to it still isn't.
+        @Test func readsOfYourFilesCoverTheirFolder() throws {
+            let env = environment(userTempRoot: nil)
+            let videos = env.home + "/Videos"
+            try FileManager.default.createDirectory(atPath: videos, withIntermediateDirectories: true)
+            for name in ["a.mov", "b.mov", "new.mov", ".env"] {
+                try "x".write(toFile: "\(videos)/\(name)", atomically: true, encoding: .utf8)
+            }
+            let events = [videos, videos + "/a.mov", videos + "/b.mov"].map {
+                SandboxEvent(process: "cat", pid: 1, verdict: .allow, operation: "file-read-data", target: $0, count: 1)
+            }
+            let config = Learn.build(target: try ResolvedTarget.resolve("/bin/cat"), events: events, environment: env)
+            let profile = SBPLCompiler(environment: env).compile(config)
+            #expect(run(profile, ["/bin/cat", videos + "/a.mov"]) == "x", "control: a file seen while learning")
+            #expect(run(profile, ["/bin/cat", videos + "/new.mov"]) == "x", "a file it never opened, in the same folder")
+            #expect(run(profile, ["/bin/cat", videos + "/.env"]) == nil, "secrets stay blocked inside it")
+        }
+
         @Test func darwinFolderGivesOnlyTheAppsOwnCaches() throws {
             let root = try #require(MenshenEnvironment.current().userTempRoot)
             let own = "\(root)/C/cat.menshen-test-\(tag)"  // named after the app (/bin/cat), so it owns it

@@ -25,6 +25,10 @@ All notable changes are documented here.
   - `AccessSummary` / `RuleText` / `BlockedSummary` (plain-language summaries)
 - Tests: 44 in total. They cover swap round trip, refusals, rollback (mutation-checked), never deleting a foreign bundle, the end-to-end launcher via LaunchServices with a dummy app, `Library`, and the summaries.
 
+### Changed: reads of your files cover their folder
+- Learning used to list your documents one by one (VLC: the `Home Videos` folder plus each `.MOV` it played), and the next file in that folder was denied. Reads in a folder of your own files now become one folder rule once the app read the folder's listing or 2+ files in it. Your own files means other volumes, or your home outside `~/Library` and hidden folders. Never a whole volume or your home folder; writes and everything else keep the 4-file threshold, and hardening still wins inside.
+- Tests: `GeneralizerTests.readsOfYourFilesCollapseToTheirFolder` (each boundary) and `NarrowingTests.readsOfYourFilesCoverTheirFolder` (kernel: a file never opened is readable, a `.env` next to it isn't, a learned file as control). Both mutation-checked. ADR-009. Run `menshen rebuild <app>` to apply it to a config.
+
 ### Fixed: "No other programs" could be bypassed through LaunchServices
 - With `lsopen` learned (Fastpotify has it, to open its login page), a confined app could ask macOS to open another app, a document or a link. The opened app runs outside the sandbox, so a `.command` file could run unconfined in Terminal. The no-launch profile and the Restricted Sandbox's "no other programs" now deny `lsopen` too.
 - Cost: under either, links no longer open in the browser. Seatbelt can't tell links from apps (`lsopen` carries no path or URL), so no narrower rule exists. The profile text and the Restricted toggle ("Start other programs and open links") say so.

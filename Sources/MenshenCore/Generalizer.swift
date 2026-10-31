@@ -25,6 +25,10 @@ public struct Generalizer {
     static let contentRoots = ["Documents", "Desktop", "Downloads", "Movies", "Music", "Pictures", "Public"]
     /// A folder with at least this many learned files of one kind becomes a single subpath rule.
     static let collapseThreshold = 4
+    /// Reads in a folder of your own files need fewer: the files an app opened there while
+    /// learning were examples, and the next one in the same folder shouldn't be denied. The
+    /// folder's own listing counts as one.
+    static let yourFilesReadThreshold = 2
 
     let environment: MenshenEnvironment
     let target: TargetIdentity
@@ -203,27 +207,54 @@ public struct Generalizer {
 
     /// Replaces many literals in one folder with a subpath rule for that folder.
     func collapse(_ merged: [Key: Accum]) -> [(key: Key, value: Accum)] {
-        var result = merged
-        let literals = merged.filter { $0.key.filter.kind == .literal && $0.key.filter.value != nil }
-        let groups = Dictionary(grouping: literals) { entry in
-            "\(entry.key.operations.joined(separator: " "))\u{0}\((entry.key.filter.value! as NSString).deletingLastPathComponent)"
+        struct Group: Hashable {
+            var operations: [String]
+            var folder: String
         }
-        for (_, members) in groups where members.count >= Self.collapseThreshold {
-            let first = members[0].key
-            let parent = (first.filter.value! as NSString).deletingLastPathComponent
-            let depth = environment.expand(parent).split(separator: "/").count
-            guard parent != "~", depth >= 2, !parent.hasPrefix("/dev") else { continue }
+        var result = merged
+        let literals = merged.keys.filter { $0.filter.kind == .literal && $0.filter.value != nil }
+        func parent(_ key: Key) -> String { (key.filter.value! as NSString).deletingLastPathComponent }
+        var groups = Dictionary(grouping: literals) { Group(operations: $0.operations, folder: parent($0)) }
+        // Reading a folder of your files (its listing) counts toward the files read inside it.
+        for key in literals where key.operations == ["file-read*"] {
+            let inside = Group(operations: key.operations, folder: key.filter.value!)
+            guard groups[inside] != nil, isYourFiles(inside.folder) else { continue }
+            groups[Group(operations: key.operations, folder: parent(key))]?.removeAll { $0 == key }
+            groups[inside]!.append(key)
+        }
+        for (group, members) in groups {
+            let depth = environment.expand(group.folder).split(separator: "/").count
+            guard group.folder != "~", depth >= 2, !group.folder.hasPrefix("/dev") else { continue }
+            let yours = group.operations == ["file-read*"] && isYourFiles(group.folder)
+            guard members.count >= (yours ? Self.yourFilesReadThreshold : Self.collapseThreshold) else { continue }
             var accum = Accum()
             for member in members {
-                result.removeValue(forKey: member.key)
-                accum.seen += member.value.seen
-                accum.category = accum.category ?? member.value.category
+                let value = result.removeValue(forKey: member)!
+                accum.seen += value.seen
+                accum.category = accum.category ?? value.category
             }
-            let key = Key(operations: first.operations, filter: Filter(.subpath, parent))
+            let key = Key(operations: group.operations, filter: Filter(.subpath, group.folder))
             result[key, default: Accum()].seen += accum.seen
             if let c = accum.category { result[key]!.category = c }
         }
         return result.map { ($0.key, $0.value) }
+    }
+
+    /// A folder of your own files: inside another volume, or in your home folder outside
+    /// ~/Library (other apps' data) and hidden folders (tool configs). Never a volume or your
+    /// home folder itself.
+    func isYourFiles(_ folder: String) -> Bool {
+        let path = environment.expand(folder)
+        let parts: [Substring]
+        if path.hasPrefix("/Volumes/") {
+            parts = path.split(separator: "/").dropFirst(2).map { $0 }
+        } else if path.isWithin(environment.home) {
+            parts = path.dropFirst(environment.home.count).split(separator: "/")
+            if parts.first == "Library" { return false }
+        } else {
+            return false
+        }
+        return !parts.isEmpty && !parts.contains { $0.hasPrefix(".") }
     }
 
     // MARK: - Report targets

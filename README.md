@@ -132,6 +132,7 @@ The compiled profile is kept short and auditable. Rules with the same action and
   - The app's own `~/Library/*/<app>` folders, its own Darwin cache folders (`/private/var/folders/…/C/<app>`) and the shared temp folder (`…/T`) get full read/write. Other apps' caches don't.
   - Under `~/Documents` and the other content roots, access is granted per root.
   - System locations are read-only.
+  - Reads of your own files (on another volume, or in your home outside `~/Library` and hidden folders) become a folder rule once the app read the folder's listing or 2+ files in it, so the next video in `/Volumes/media/Home Videos` plays too. Never a whole volume or your home folder, and hardening still wins inside.
   - Anything else stays an exact path, and becomes a folder rule once a folder has 4+ files.
   - Mach services (looked up or registered), preference domains, IOKit classes, ports, shared-memory names and written sysctls stay exact.
   - `menshen rebuild <app>` regenerates a config from its saved captures, so configs learned earlier pick up these rules without running the app again.
