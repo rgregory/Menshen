@@ -6,7 +6,8 @@ import Foundation
 public struct RestrictedSandbox: Codable, Equatable, Sendable {
     /// Internet and local-network connections. Local sockets (logging, DNS) always work.
     public var network = false
-    /// Starting other programs. The app's own helpers inside its bundle always work.
+    /// Starting other programs, and having macOS open apps, documents or links. The app's own
+    /// helpers inside its bundle always work.
     public var otherPrograms = false
     /// The app's own folders in ~/Library (settings, caches, saved state) and in the Darwin
     /// caches, guessed from its bundle ID and name. Off means it can't keep anything between runs.
@@ -86,8 +87,9 @@ extension SBPLCompiler {
     /// The Restricted Sandbox profile. Starts by allowing everything an app normally does, so any
     /// app runs without learning, then takes away: the network, your home folder (except the folders you chose and
     /// the app's own), writes outside temp and your read & write folders, other programs. The
-    /// sanity set comes last so it wins. Every deny carries a filter: a filter-less deny only
-    /// would only set the operation's default (ADR-003).
+    /// sanity set comes last so it wins. Every deny carries a filter: a filter-less deny would
+    /// only set the operation's default (ADR-003). The exception is `lsopen`, which the kernel
+    /// checks with no path, so no filter matches it (finding 30).
     public func restrictedProfile(_ target: ResolvedTarget, _ box: RestrictedSandbox) -> String {
         let t = target.identity
         let home = environment.home
@@ -131,9 +133,10 @@ extension SBPLCompiler {
         let readable = [t.path] + rw + ro + own + [home + "/Library/Fonts"]
         out.append(statement("allow", ["file-read*"], subpaths(readable), report: false))
         if !box.otherPrograms {
-            out += ["", ";; no other programs",
+            out += ["", ";; no other programs, nor apps, documents or links opened through LaunchServices",
                     "(deny process-exec* (subpath \"/\"))",
-                    "(allow process-exec* \(ownBundle))"]
+                    "(allow process-exec* \(ownBundle))",
+                    "(deny lsopen)"]
         }
         let anchors = own + rw
         let rules = Hardening(environment: environment, ownAnchors: anchors).rules(hits: [:])

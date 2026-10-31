@@ -91,6 +91,10 @@ public struct SBPLCompiler {
             out.append("(deny process-exec* (subpath \"/\"))")
             let taskpolicy = config.limits?.memoryMB != nil ? " (literal \"/usr/sbin/taskpolicy\")" : ""
             out.append("(allow process-exec* \(own)\(taskpolicy)\(config.logging.exec ? " (with report)" : ""))")
+            // Apps, documents and links opened through LaunchServices run outside the sandbox.
+            // lsopen is checked with no path, so no filter matches it and this deny has none;
+            // it wins because learned lsopen allows have no filter either (finding 30).
+            out.append("(deny lsopen)")
         }
         return out
     }

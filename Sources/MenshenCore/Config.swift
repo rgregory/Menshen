@@ -307,7 +307,7 @@ public enum Profile: String, Codable, CaseIterable, Sendable {
         switch self {
         case .offline: return "No internet or local-network connections, even if learned. Local sockets (logging, DNS) still work."
         case .tempOnly: return "Writes only to temp folders, never your files, even if learned. Command-line tools get a private temp folder (TMPDIR); Mac apps use the shared system one."
-        case .noLaunch: return "Can't start other programs, only its own helpers."
+        case .noLaunch: return "Can't start other programs, only its own helpers. It also can't have macOS open apps, documents or links, so links won't open in your browser."
         case .background: return "Low CPU priority and throttled disk I/O, so it can't hog the Mac."
         }
     }

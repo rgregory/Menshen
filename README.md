@@ -53,7 +53,7 @@ menshen profile /Applications/VLC.app --none                    # clear profiles
 |---|---|
 | `offline` | No internet or local-network connections, even if learned. Local sockets (logging, DNS) still work. |
 | `temp-only` | Writes only to temp folders, never your files, even if learned. Command-line tools get a private TMPDIR. Mac apps can only use the shared system temp folder (macOS limitation). |
-| `no-launch` | Can't start other programs, only its own helpers. |
+| `no-launch` | Can't start other programs, only its own helpers. It also can't have macOS open apps, documents or links, so links won't open in your browser. |
 | `background` | Low CPU priority and throttled disk I/O (`taskpolicy`). |
 | `--cpu-seconds` / `--memory-mb` | Hard limits: stopped after N seconds of CPU time, killed above N MiB. |
 

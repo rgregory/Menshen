@@ -23,6 +23,11 @@ All notable changes are documented here.
   - `AccessSummary` / `RuleText` / `BlockedSummary` (plain-language summaries)
 - Tests: 44 in total. They cover swap round trip, refusals, rollback (mutation-checked), never deleting a foreign bundle, the end-to-end launcher via LaunchServices with a dummy app, `Library`, and the summaries.
 
+### Fixed: "No other programs" could be bypassed through LaunchServices
+- With `lsopen` learned (Fastpotify has it, to open its login page), a confined app could ask macOS to open another app, a document or a link. The opened app runs outside the sandbox, so a `.command` file could run unconfined in Terminal. The no-launch profile and the Restricted Sandbox's "no other programs" now deny `lsopen` too.
+- Cost: under either, links no longer open in the browser. Seatbelt can't tell links from apps (`lsopen` carries no path or URL), so no narrower rule exists. The profile text and the Restricted toggle ("Start other programs and open links") say so.
+- Kernel tests (`LSOpenTests`, `lsopenprobe` fixture): the probe opens a self-built dummy app, never a real one. Unsandboxed control, a control profile without the restriction (the dummy starts from launchd, unsandboxed), and a mutation check. ADR-008, reference row 31.
+
 ### Changed: learned rules stay as narrow as what the kernel reported
 - **Darwin folder:** learning no longer owns the whole per-user `/private/var/folders/xx/yyy`, which holds every app's caches (536 folders on the test Mac). An app owns the shared temp folder (`…/T`) and only its own folders in `…/C` and `…/0`, found the same way as its `~/Library` folders. Writes to another app's caches are learned exactly and reported as writes outside. Temp-only allows the same places.
 - **Names kept:** `mach-register`, `ipc-posix-*` (shared memory, semaphores) and `sysctl-write` rules now name what the app used, instead of allowing every name. A filter-less `mach-register` let an app register any service name in your login session; per-pid registrations (AppKit's `com.apple.axserver`, `coredrag`, …) are already allowed by `system.sb`, so they're left out of the profile.

@@ -182,7 +182,7 @@ struct RestrictedSettingsView: View {
             Text("Apps you drop on Menshen run with only this access. Secrets (SSH keys, .env files, keychains, browser and chat data) are always blocked.")
                 .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Toggle("Network (internet and local network)", isOn: box.restricted.network)
-            Toggle("Start other programs", isOn: box.restricted.otherPrograms)
+            Toggle("Start other programs and open links", isOn: box.restricted.otherPrograms)
             Toggle("Keep its own settings and caches in ~/Library", isOn: box.restricted.ownData)
             FolderList(title: "Read & write folders", empty: "None: it can write only to temp folders.",
                        paths: store.restricted.readWrite, add: { store.addRestrictedFolder(writable: true) },
