@@ -24,10 +24,17 @@ public struct ActivitySummary: Sendable {
         var network = Group(), disk = Group(), launches = Group(), services = Group(), devices = Group(), blocked = Group()
         for r in records {
             s.total += r.count
-            s.counts[r.category, default: 0] += r.count
+            s.counts[kind(operation: r.operation, category: r.category), default: 0] += r.count
             if r.verdict == .deny {
                 s.blocked += r.count
                 blocked.add("\(RuleText.verb([group(r.operation)])) \(r.target)", "", r.count)
+                // Blocked connections and launches also show on their own tiles.
+                if r.operation.hasPrefix("network") {
+                    network.add(networkLabel(r.target), "blocked", r.count)
+                } else if r.operation.hasPrefix("process-exec") {
+                    let path = Generalizer.path(from: r.target) ?? r.target
+                    launches.add((path as NSString).lastPathComponent, "blocked", r.count)
+                }
                 continue
             }
             switch r.category {
@@ -55,6 +62,14 @@ public struct ActivitySummary: Sendable {
         s.devices = devices.top(limit)
         s.blockedTop = blocked.top(limit)
         return s
+    }
+
+    /// The counter a record belongs to. Blocked records are categorized "denied", but a blocked
+    /// connection is still network activity and a blocked launch still a launch.
+    public static func kind(operation: String, category: String) -> String {
+        if operation.hasPrefix("network") { return "network" }
+        if operation.hasPrefix("process-exec") { return "exec" }
+        return category
     }
 
     /// "port 443 (HTTPS)", "DNS lookups", "the system log", or the socket path.

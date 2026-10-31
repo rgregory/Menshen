@@ -55,6 +55,21 @@ import Testing
         #expect(a.blockedTop.first?.label == "Write ~/Library/LaunchAgents/x.plist")
     }
 
+    /// A blocked connection is still network activity (seen live: "1 blocked, 0 network").
+    @Test func blockedConnectionsCountAsNetwork() {
+        let records = [
+            EnforceRecord(ts: Date(), runId: "r", pid: 1, process: "VLC", verdict: .deny, operation: "network-outbound",
+                          target: "remote:*:9", category: "denied", count: 2),
+            EnforceRecord(ts: Date(), runId: "r", pid: 1, process: "VLC", verdict: .deny, operation: "process-exec*",
+                          target: "/bin/sh", category: "denied", count: 1),
+        ]
+        let s = ActivitySummary.make(records)
+        #expect(s.blocked == 3)
+        #expect(s.counts["network"] == 2 && s.counts["exec"] == 1)
+        #expect(s.network.first?.detail == "blocked")
+        #expect(s.launches.first?.label == "sh")
+    }
+
     @Test func writesInOwnFoldersAreNotOutside() {
         let event = SandboxEvent(process: "Foo", pid: 1, verdict: .allow, operation: "file-write-data",
                                  target: "\(testHome)/Library/Caches/foo/x")

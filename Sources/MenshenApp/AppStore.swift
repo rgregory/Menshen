@@ -61,6 +61,7 @@ struct AppItem: Identifiable {
 final class AppStore {
     let environment = MenshenEnvironment.current()
     @ObservationIgnored let stub = Swap.defaultStub()
+    @ObservationIgnored private var statusCache: [String: (stamp: Date?, status: WrapStatus)] = [:]
 
     var entries: [AppEntry] = []
     var added: [AppItem] = []
@@ -99,6 +100,10 @@ final class AppStore {
     var newCategory: FileCategory = .media
     var newValue = ""
 
+    /// The Restricted Sandbox settings dropped apps run with (saved on every change).
+    var restricted = RestrictedSandbox()
+    var editingRestricted = false
+
     /// The app waiting for "Remove from Menshen" confirmation.
     var removing: AppItem?
 
@@ -107,6 +112,7 @@ final class AppStore {
     var confirmingRestore = false
 
     init() {
+        restricted = RestrictedSandbox.load(environment)
         refresh()
         watchTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.watchReplacedApps() }
     }
@@ -154,7 +160,8 @@ final class AppStore {
 
     func add(_ url: URL) {
         do {
-            let target = try ResolvedTarget.resolve(url.path)
+            // A replaced app's launcher stands for the hidden original.
+            let target = try ResolvedTarget.resolve(Swap.resolveOriginal(url.path))
             let key = target.identity.key
             if !items.contains(where: { $0.id == key }) {
                 added.append(AppItem(id: key, name: target.identity.name, appPath: target.identity.path, entry: nil))
@@ -166,14 +173,26 @@ final class AppStore {
         }
     }
 
+    /// Whether Menshen can wrap the app, checked once per app and kept until the app changes on
+    /// disk (views ask on every redraw, which during a live session is several times a second).
+    func wrapStatus(_ item: AppItem) -> WrapStatus {
+        let stamp = Self.modificationStamp(item.appPath)
+        if let cached = statusCache[item.appPath], cached.stamp == stamp { return cached.status }
+        let status = WrapStatus.check(item.appPath)
+        statusCache[item.appPath] = (stamp, status)
+        return status
+    }
+
     /// nil if the app can be wrapped, otherwise the reason it can't.
     func preflightProblem(_ item: AppItem) -> String? {
-        do {
-            try ResolvedTarget.resolve(item.appPath).preflight()
-            return nil
-        } catch {
-            return "\(error)"
-        }
+        wrapStatus(item).problem(name: item.name)
+    }
+
+    /// Changes when the app is updated or replaced: its Info.plist (bundles) or the file itself.
+    static func modificationStamp(_ path: String) -> Date? {
+        let plist = path + "/Contents/Info.plist"
+        let target = FileManager.default.fileExists(atPath: plist) ? plist : path
+        return (try? FileManager.default.attributesOfItem(atPath: target))?[.modificationDate] as? Date
     }
 
     // MARK: - Removing apps
@@ -233,6 +252,64 @@ final class AppStore {
             return "\(s.denials) denial(s), \(s.uniqueDenials) distinct. Log: \(s.logURL.lastPathComponent)"
         }, onFinish: { [weak self] in self?.sessionEnded(item.id) })
         tab = .session
+    }
+
+    /// No learning: runs the app in the Restricted Sandbox with the settings you chose.
+    func runRestricted(_ item: AppItem) {
+        if let problem = preflightProblem(item) {
+            message = problem
+            return
+        }
+        if sessions[item.id]?.running == true {
+            message = "\(item.name) is already running under Menshen."
+            return
+        }
+        let session = LiveSession(kind: .enforce, appName: item.name)
+        var options = EnforceOptions(target: item.appPath)
+        options.control = SessionControl(forwardSignals: false, stop: session.stop)
+        options.onRecord = { session.add($0) }
+        let env = environment
+        let box = restricted
+        sessions[item.id] = session
+        session.start({ session in
+            let s = try Enforce.runRestricted(options, sandbox: box, environment: env, say: { session.setStatus($0) })
+            return "Restricted Sandbox: \(s.denials) blocked, \(s.uniqueDenials) distinct. Log: \(s.logURL.lastPathComponent)"
+        }, onFinish: { [weak self] in self?.sessionEnded(item.id) })
+        tab = .dashboard
+    }
+
+    /// Apps dropped on the Dock icon or the drop zone run in the Restricted Sandbox right away.
+    func open(_ urls: [URL]) {
+        for url in urls where url.pathExtension == "app" {
+            add(url)
+            guard let key = try? ResolvedTarget.resolve(Swap.resolveOriginal(url.path)).identity.key,
+                  let item = items.first(where: { $0.id == key }) else { continue }
+            runRestricted(item)
+        }
+    }
+
+    func saveRestricted() {
+        do {
+            try restricted.save(environment)
+        } catch {
+            message = "Couldn't save the Restricted Sandbox settings: \(error)"
+        }
+    }
+
+    func addRestrictedFolder(writable: Bool) {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = true
+        panel.message = writable ? "Folders the app may read and write" : "Folders the app may only read"
+        guard panel.runModal() == .OK else { return }
+        let paths = panel.urls.map { environment.abbreviate(realPath($0.path)) }
+        if writable {
+            restricted.readWrite += paths.filter { !restricted.readWrite.contains($0) }
+        } else {
+            restricted.readOnly += paths.filter { !restricted.readOnly.contains($0) }
+        }
+        saveRestricted()
     }
 
     func stop(_ key: String) {

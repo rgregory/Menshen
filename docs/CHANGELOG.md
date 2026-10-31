@@ -23,6 +23,17 @@ All notable changes are documented here.
   - `AccessSummary` / `RuleText` / `BlockedSummary` (plain-language summaries)
 - Tests: 44 in total. They cover swap round trip, refusals, rollback (mutation-checked), never deleting a foreign bundle, the end-to-end launcher via LaunchServices with a dummy app, `Library`, and the summaries.
 
+### Added: Restricted Sandbox (drop an app to run it confined)
+- Choose once what dropped apps may do (sidebar drop zone → Settings…, or the toolbar lock): network on/off, other programs on/off, its own `~/Library` data on/off, **read & write folders** and **read-only folders**. Everything else in your home folder is unreadable, writes go only to those folders and temp, and the sanity set is always blocked, even inside your folders.
+- **Drop any app** on Menshen's Dock icon or the drop zone and it runs right away in that sandbox. No learning; blocked attempts are logged and shown live on its Dashboard. Unlearned apps also get **Run Restricted**.
+- CLI: `menshen box <App> [--network] [--programs] [--no-own-data] [--rw DIR]… [--ro DIR]… [--save]`.
+- The Dashboard counts a blocked connection as network activity and a blocked launch as a launch (they showed only under Blocked, with "0 network").
+- Kernel tests (`RestrictedTests`): an escape probe as the dropped app, with an unsandboxed control and a mutation check, plus logging through the real session path. ADR-006.
+
+### Changed: instant "can it be wrapped?" check
+- Each app is checked once, from its signature (no launch), and the result is kept until the app changes on disk. The sidebar shows **Already sandboxed** or **Apple app** right away for apps Menshen can't wrap. Previously the check ran on every redraw, several times a second during a live session.
+- The Apple-signed check skips re-hashing the bundle: under 1 ms instead of up to ~80 ms, with the same answers (tested against the full check). Replace still runs a full `codesign --verify`.
+
 ### Changed: templates are now "profiles"; apps can be removed
 - Templates are called **profiles**: a Profiles card on each app's Dashboard applies them immediately (saved with a backup, mirrored into unsaved Config edits), and `menshen profile` replaces `menshen template`. The config key is `profiles`. "Show Profile" became **Show Sandbox Rules**, and `ProfileCompiler` became `SBPLCompiler` in code, so "profile" means one thing.
 - **Remove from Menshen** (sidebar right-click or Delete, with confirmation; `menshen forget`): a learned app's config, backups, captures, logs and private temp folder go to the Trash. Refused while the app is replaced.

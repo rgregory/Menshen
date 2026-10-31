@@ -195,16 +195,49 @@ public enum Enforce {
 
         var control = options.control
         control.launch = try launchOptions(config, environment: environment)
+        say("enforcing \(configURL.path) on \(target.identity.name).")
+        return try logged(profileURL: profileURL, target: target, options: options, control: control,
+                          logging: config.logging, ownFolders: config.anchors.map(environment.expand),
+                          environment: environment, say: say)
+    }
+
+    /// The Restricted Sandbox, no learning needed: any app runs with only the access you chose
+    /// (see `RestrictedSandbox`), and everything it was blocked from is logged.
+    public static func runRestricted(
+        _ options: EnforceOptions,
+        sandbox: RestrictedSandbox,
+        environment: MenshenEnvironment = .current(),
+        say: @escaping @Sendable (String) -> Void = { _ in }
+    ) throws -> EnforceSummary {
+        let target = try ResolvedTarget.resolve(Swap.resolveOriginal(options.target))
+        try target.preflight()
+        let text = SBPLCompiler(environment: environment).restrictedProfile(target, sandbox)
+        if let error = SBPLCompiler.validate(text) {
+            throw MenshenError.failed("the Restricted Sandbox profile doesn't load:\n\(error)")
+        }
+        try FileManager.default.ensureDirectory(environment.profilesDir)
+        let profileURL = environment.profilesDir.appendingPathComponent("\(target.identity.key).restricted.sb")
+        try text.write(to: profileURL, atomically: true, encoding: .utf8)
+        say("running \(target.identity.name) in the Restricted Sandbox: \(sandbox.summary).")
+        return try logged(profileURL: profileURL, target: target, options: options, control: options.control,
+                          logging: LoggingSettings(), ownFolders: sandbox.readWrite.map(environment.expand),
+                          environment: environment, say: say)
+    }
+
+    /// Runs the target under a profile and writes every denial (and reported allow) to a new log.
+    static func logged(
+        profileURL: URL, target: ResolvedTarget, options: EnforceOptions, control: SessionControl,
+        logging: LoggingSettings, ownFolders: [String], environment: MenshenEnvironment,
+        say: @escaping @Sendable (String) -> Void
+    ) throws -> EnforceSummary {
         let runId = UUID().uuidString
-        let logURL = environment.logsDir(config.target.key).appendingPathComponent("\(fileStamp()).jsonl")
+        let logURL = environment.logsDir(target.identity.key).appendingPathComponent("\(fileStamp()).jsonl")
         let log = try NDJSONWriter(logURL)
         defer { log.close() }
         let tally = Tally()
-        let logging = config.logging
         let onRecord = options.onRecord
-        let ownFolders = config.anchors.map(environment.expand)
 
-        say("enforcing \(configURL.path) on \(target.identity.name). Log: \(logURL.path)")
+        say("log: \(logURL.path)")
         let result = try Session.run(
             profile: profileURL, target: target, arguments: options.arguments,
             duration: options.duration, environment: environment, control: control,

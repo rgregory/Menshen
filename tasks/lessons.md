@@ -46,6 +46,18 @@
 
 **Rule:** Every restriction Menshen adds gets a kernel test that runs a real process and checks for EPERM, with a control showing the same action succeeds without the restriction.
 
+## 2026-10-31 · Shell one-liners in tests fail for reasons of their own
+
+**What happened:** In the Restricted Sandbox tests, checks of the form "this should fail" passed for the wrong reason. `/bin/sh` is a shim that starts bash, and "no other programs" blocked that, so every `sh -c …` failed. Then `read l < file` returned 1 only because the test file had no trailing newline. The `.env` check "passed" while `.env` was actually readable. Only a positive control in the same profile (a check that must succeed) exposed both.
+
+**Rule:** Every group of "must fail" kernel checks gets a "must succeed" control in the **same** profile and runner. Check content (`[ "$l" = x ]`), not just exit status.
+
+## 2026-10-31 · Confirm the user's mental model before building the obvious reading
+
+**What happened:** Asked for a "temp-VM" to read an untrusted PDF, I built a dedicated sandboxed PDF viewer. The user wanted something general: drop *any* app on an icon and it runs in a sandbox they configured; the PDF was only an example.
+
+**Rule:** When a request includes an example ("…and a PDF"), ask whether the example *is* the feature or only illustrates it, before building something specific to the example.
+
 ## 2026-10-30 · A count of zero can mean the check couldn't look
 
 **What happened:** To confirm a test left nothing in the user's Trash, I ran `ls ~/.Trash | wc -l` and reported 0. In fact `ls` was refused ("Operation not permitted": this session can't list the Trash), so `wc` counted zero lines of nothing. The claim happened to be true, but it was unverified.

@@ -83,25 +83,20 @@ public struct ResolvedTarget: Sendable {
         SigningInfo.read(URL(fileURLWithPath: path)).cdhash
     }
 
-    /// Refuses targets Seatbelt can't wrap, before anything is launched.
-    public func preflight() throws {
+    /// Whether Seatbelt can wrap this app, decided from its signature alone (no launch).
+    public var wrapStatus: WrapStatus {
         guard FileManager.default.isExecutableFile(atPath: "/usr/bin/sandbox-exec") else {
-            throw MenshenError.refused("/usr/bin/sandbox-exec is missing on this system")
+            return .unavailable("/usr/bin/sandbox-exec is missing on this system")
         }
         // Apple first: launch constraints apply to Apple's apps whether or not they're sandboxed.
-        if isAppleSigned && bundlePath != nil {
-            throw MenshenError.refused("""
-                \(identity.name) is signed by Apple. macOS launch constraints kill Apple's own apps \
-                unless launchd starts them, so they can't be wrapped.
-                """)
-        }
-        if hasAppSandbox {
-            throw MenshenError.refused("""
-                \(identity.name) already runs in Apple's App Sandbox. Seatbelt won't apply a second \
-                sandbox to it (the kernel denies `forbidden-sandbox-reinit` and the app traps at launch). \
-                It is already confined by its own entitlements.
-                """)
-        }
+        if isAppleSigned && bundlePath != nil { return .appleApp }
+        if hasAppSandbox { return .alreadySandboxed }
+        return .wrappable
+    }
+
+    /// Refuses targets Seatbelt can't wrap, before anything is launched.
+    public func preflight() throws {
+        if let problem = wrapStatus.problem(name: identity.name) { throw MenshenError.refused(problem) }
     }
 }
 
@@ -135,8 +130,55 @@ struct SigningInfo {
         var requirement: SecRequirement?
         if SecRequirementCreateWithString("anchor apple" as CFString, [], &requirement) == errSecSuccess,
            let req = requirement {
-            result.isAppleAnchor = SecStaticCodeCheckValidity(code, [], req) == errSecSuccess
+            // Only the anchor matters here, so skip re-hashing every file in the bundle: same answer
+            // in under a millisecond instead of up to ~80 ms (measured). Replace still runs a full
+            // `codesign --verify` before it touches an app.
+            let quick = SecCSFlags(rawValue: kSecCSDoNotValidateResources | kSecCSDoNotValidateExecutable)
+            result.isAppleAnchor = SecStaticCodeCheckValidity(code, quick, req) == errSecSuccess
         }
         return result
+    }
+}
+
+/// Whether Menshen can put an app in its sandbox.
+public enum WrapStatus: Equatable, Sendable {
+    case wrappable
+    /// Already confined by Apple's App Sandbox; Seatbelt refuses a second sandbox.
+    case alreadySandboxed
+    /// Signed by Apple: launch constraints only let launchd start it.
+    case appleApp
+    case unavailable(String)
+
+    /// Short label for lists, nil when the app can be wrapped.
+    public var badge: String? {
+        switch self {
+        case .wrappable: return nil
+        case .alreadySandboxed: return "Already sandboxed"
+        case .appleApp: return "Apple app"
+        case .unavailable: return "Unavailable"
+        }
+    }
+
+    /// The full reason, nil when the app can be wrapped.
+    public func problem(name: String) -> String? {
+        switch self {
+        case .wrappable:
+            return nil
+        case .alreadySandboxed:
+            return "\(name) already runs in Apple's App Sandbox. Seatbelt won't apply a second sandbox to it (the kernel denies `forbidden-sandbox-reinit` and the app traps at launch). It is already confined by its own entitlements."
+        case .appleApp:
+            return "\(name) is signed by Apple. macOS launch constraints kill Apple's own apps unless launchd starts them, so they can't be wrapped."
+        case .unavailable(let why):
+            return why
+        }
+    }
+
+    /// Checks an app on disk (about a millisecond; nothing is launched).
+    public static func check(_ path: String) -> WrapStatus {
+        do {
+            return try ResolvedTarget.resolve(path).wrapStatus
+        } catch {
+            return .unavailable("\(error)")
+        }
     }
 }

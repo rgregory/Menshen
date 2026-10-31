@@ -145,7 +145,7 @@ final class LiveSession {
         for row in new {
             total += row.count
             if row.verdict == .deny { denied += row.count }
-            byCategory[row.category, default: 0] += row.count
+            byCategory[ActivitySummary.kind(operation: row.operation, category: row.category), default: 0] += row.count
         }
         rows.append(contentsOf: new)
         if rows.count > Self.maxRows { rows.removeFirst(rows.count - Self.maxRows) }

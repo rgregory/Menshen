@@ -48,6 +48,18 @@ cat > "$APP/Contents/Info.plist" <<EOF
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSPrincipalClass</key><string>NSApplication</string>
+    <!-- Apps dropped on the Dock icon run in the Restricted Sandbox. Rank None: Menshen never
+         becomes the default for opening apps. -->
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeName</key><string>Application</string>
+            <key>CFBundleTypeRole</key><string>Viewer</string>
+            <key>LSHandlerRank</key><string>None</string>
+            <key>LSItemContentTypes</key>
+            <array><string>com.apple.application-bundle</string></array>
+        </dict>
+    </array>
 </dict>
 </plist>
 EOF
