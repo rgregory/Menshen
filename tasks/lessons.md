@@ -63,3 +63,9 @@
 **What happened:** To confirm a test left nothing in the user's Trash, I ran `ls ~/.Trash | wc -l` and reported 0. In fact `ls` was refused ("Operation not permitted": this session can't list the Trash), so `wc` counted zero lines of nothing. The claim happened to be true, but it was unverified.
 
 **Rule:** Never pipe a check straight into a count. Check the command's own exit status first, and confirm with a positive control (create a known item, see it, remove it) before reporting "none".
+
+## 2026-10-31 · Judge a rule inside the profile it will live in
+
+**What happened:** Reviewing Fastpotify's learned `mach-register`, I tested name filters under a bare `(allow default)` profile and said denying registration would break VoiceOver and drag and drop. Under Menshen's real profile the answer was different: `system.sb`, which every profile imports, already allows every per-pid registration, so that deny would have changed nothing, and the actual hole was *global* registration. The kernel test against the compiled profile caught it.
+
+**Rule:** Before calling a rule risky, necessary or redundant, check what `system.sb` and the always-on rules already grant, and test it in the full compiled profile, not a minimal one.

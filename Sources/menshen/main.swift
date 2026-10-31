@@ -8,6 +8,7 @@ let usage = """
       menshen learn   <App.app | binary> [--duration 10m] [--merge] [--config PATH] [-- app-args…]
       menshen enforce <App.app | binary | config.json> [--duration 10m] [--config PATH] [--allow-changed] [-- app-args…]
       menshen box     <App.app | binary> [--network] [--programs] [--no-own-data] [--rw DIR]… [--ro DIR]… [--save] [-- app-args…]
+      menshen rebuild <App.app | binary | config.json> [--config PATH]
       menshen show    <App.app | binary | config.json> [--config PATH]
       menshen allow   <App.app | config.json> [--write] CATEGORY… | TYPES… | FOLDER…   e.g. allow VLC.app media
       menshen allow   <App.app | config.json> --remove RULE-ID
@@ -27,6 +28,9 @@ let usage = """
              and the app's own data, writes only there and in temp, no other programs, and
              secrets always blocked. With no options, uses the settings saved from Menshen.app;
              --save stores the options given as those settings.
+    rebuild  Regenerate the config from its saved learn captures, without running the app, so
+             it picks up improvements in how Menshen turns reports into rules. Keeps your
+             rules, profiles, limits and switches. The previous config is backed up.
     show     Print the SBPL profile the config compiles to.
     allow    Add a broad permission of your own: a category as macOS sections file types
              (media, images, documents), some types (mp4 mkv), or a folder (~/Movies).
@@ -277,6 +281,17 @@ func runSwaps() -> Int32 {
     return 0
 }
 
+func runRebuild(_ p: Parsed, _ target: String) throws -> Int32 {
+    var options = EnforceOptions(target: target)
+    options.configPath = p.config
+    let env = MenshenEnvironment.current()
+    let (url, _) = try Enforce.locateConfig(options, environment: env)
+    let (config, backup) = try Learn.rebuild(configURL: url, environment: env)
+    say("rebuilt \(url.path) from \(config.learning.captures.count) capture(s): \(config.rules.count) rules, \(config.hardening.count) hardening rules")
+    if let backup { say("previous config backed up to \(backup.path)") }
+    return 0
+}
+
 func runShow(_ p: Parsed, _ target: String) throws -> Int32 {
     var options = EnforceOptions(target: target)
     options.configPath = p.config
@@ -325,6 +340,7 @@ do {
     case "learn": status = try runLearn(p, target)
     case "enforce": status = try runEnforce(p, target)
     case "box": status = try runBox(p, target)
+    case "rebuild": status = try runRebuild(p, target)
     case "show": status = try runShow(p, target)
     case "allow": status = try runAllow(p, target)
     case "forget": status = try runForget(target)

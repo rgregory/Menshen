@@ -103,7 +103,7 @@ public struct Generalizer {
                 continue
             }
             switch op {
-            case "mach-lookup":
+            case "mach-lookup", "mach-register":
                 var name = event.target
                 var kind = FilterKind.globalName
                 if name.hasSuffix(" (per-pid)") {
@@ -118,10 +118,14 @@ public struct Generalizer {
                 record([op], event.target.isEmpty ? .any : Filter(.preferenceDomain, event.target), nil, event.count)
             case "iokit-open-user-client":
                 record([op], event.target.isEmpty ? .any : Filter(.iokitUserClientClass, event.target), nil, event.count)
+            case "sysctl-write":
+                record([op], event.target.isEmpty ? .any : Filter(.sysctlName, event.target), nil, event.count)
+            case _ where op.hasPrefix("ipc-posix-"):  // shared memory and semaphores
+                record([op], event.target.isEmpty ? .any : Filter(.ipcPosixName, event.target), nil, event.count)
             case "signal":
                 continue  // always-on rule: signals only within the sandbox
             default:
-                record([op], .any, nil, event.count)  // sysctl-read, system-info, ipc-posix-*, process-fork, …
+                record([op], .any, nil, event.count)  // sysctl-read, system-info, process-fork, …
             }
         }
 
@@ -145,17 +149,19 @@ public struct Generalizer {
         var category: ReportCategory?
     }
 
-    /// Folders the app owns: its bundle (or executable), the user temp root, and any ~/Library
-    /// area folder named after it that it actually touched.
+    /// Folders the app owns: its bundle (or executable), the shared user temp folder, and any
+    /// folder named after it that it actually touched in a ~/Library area or in the Darwin
+    /// caches (`…/C`, `…/0`). Never the whole Darwin folder: that is every app's caches.
     func ownAnchors(_ events: [SandboxEvent]) -> [String] {
         var anchors: Set<String> = [bundlePath ?? target.executable]
-        if let temp = environment.userTempRoot { anchors.insert(temp) }
-        let library = environment.home + "/Library/"
+        if let temp = environment.userTempDir { anchors.insert(temp) }
+        let areas = Self.libraryAreas.map { environment.home + "/Library/" + $0 } + environment.userAppAreas
         for event in events where event.operation.hasPrefix("file-") || event.operation.hasPrefix("process-exec") {
-            guard let path = Self.path(from: event.target), path.hasPrefix(library) else { continue }
-            let parts = path.dropFirst(library.count).split(separator: "/", omittingEmptySubsequences: true)
-            guard parts.count >= 2, Self.libraryAreas.contains(String(parts[0])), owns(String(parts[1])) else { continue }
-            anchors.insert(library + parts[0] + "/" + parts[1])
+            guard let path = Self.path(from: event.target),
+                  let area = areas.first(where: { path.hasPrefix($0 + "/") }),
+                  let name = path.dropFirst(area.count + 1).split(separator: "/").first,
+                  owns(String(name)) else { continue }
+            anchors.insert(area + "/" + name)
         }
         return anchors.sorted()
     }

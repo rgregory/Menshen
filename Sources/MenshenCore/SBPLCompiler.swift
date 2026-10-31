@@ -80,8 +80,11 @@ public struct SBPLCompiler {
         }
         if profiles.contains(.tempOnly) {
             out.append("(deny file-write* (subpath \"/\"))")
+            // Shared temp plus the app's own Darwin cache folders, never every app's caches.
             var places = [environment.privateTemp(config.target.key).path]
-            if let temp = environment.userTempRoot { places.append(temp) }
+            if let temp = environment.userTempDir { places.append(temp) }
+            places += config.anchors.map(environment.expand)
+                .filter { anchor in environment.userAppAreas.contains { anchor.hasPrefix($0 + "/") } }
             out.append(statement("allow", ["file-write*"], places.map { "(subpath \(quote($0)))" } + ["(subpath \"/dev\")"], report: false))
         }
         if profiles.contains(.noLaunch) {
@@ -166,14 +169,17 @@ public struct SBPLCompiler {
         return head + filters.map { "\n    \($0)" }.joined() + tail
     }
 
-    /// Learned allows that an always-on rule already grants (Apple services and preferences,
-    /// the app's own preferences and bundle), so they add nothing to the profile.
+    /// Learned allows that an always-on rule or system.sb already grants (Apple services and
+    /// preferences, per-pid registrations, the app's own preferences and bundle), so they add
+    /// nothing to the profile.
     func coveredByAlwaysOn(_ rule: Rule, _ config: MenshenConfig) -> Bool {
         guard rule.action == .allow, let value = rule.filter.value else { return false }
         let ops = Set(rule.operations)
         switch rule.filter.kind {
         case .globalName:
             return ops == ["mach-lookup"] && value.hasPrefix("com.apple.")
+        case .localName:
+            return ops == ["mach-register"]  // system.sb allows every per-pid registration
         case .preferenceDomain:
             return ops == ["user-preference-read"]
                 && (value.hasPrefix("com.apple.") || ["kCFPreferencesAnyApplication", "pbs", config.target.bundleId].contains(value))
@@ -202,6 +208,8 @@ public struct SBPLCompiler {
         case .local: return "(local ip \(quote(value)))"
         case .preferenceDomain: return "(preference-domain \(quote(value)))"
         case .iokitUserClientClass: return "(iokit-user-client-class \(quote(value)))"
+        case .ipcPosixName: return "(ipc-posix-name \(quote(value)))"
+        case .sysctlName: return "(sysctl-name \(quote(value)))"
         case .homePattern: return "(require-all (subpath \(quote(environment.home))) (regex #\"\(raw)\"))"
         case .fileTypes: return "(regex #\"\\.(\(Self.caseInsensitive(raw)))$\")"
         }

@@ -15,6 +15,11 @@ Open questions, deferred items, and known unknowns.
 | 2026-10-30 | App icon license | The archway image (Pinterest) has an unknown designer and license. Replace it or get permission before distributing. |
 | 2026-10-30 | CPU percentage cap | Not offered: macOS has no "max N% CPU" control. It would need a pause/resume watchdog (as App Tamer does). Background priority and a hard CPU-time budget are offered instead. |
 | 2026-10-30 | Private temp for Mac apps | Temp-only gives command-line tools a private TMPDIR, but NSTemporaryDirectory ignores TMPDIR, so Mac apps use the shared per-user temp folder. |
+| 2026-10-31 | Fastpotify's login callback listens on every network interface (`*:47113`) | Seatbelt can't keep a listener to loopback peers (reference row 28). Block incoming connections from the network for Fastpotify in Little Snitch or the firewall. |
+| 2026-10-31 | Restricted Sandbox writes to the whole Darwin folder | `Restricted.swift` allows writes to `userTempRoot` (every app's caches in `C`), the breadth ADR-007 removed from learned profiles. Could use `userTempDir` plus the app's own `C/<app>`. |
+| 2026-10-31 | `lsopen` and No other programs | No-launch denies `process-exec*`, but a learned `lsopen` still lets the app ask LaunchServices to open other apps, which run outside the sandbox. Not tested yet. |
+| 2026-10-31 | Fastpotify rebuilt under ADR-007, not yet run | The rebuilt profile loads in the kernel and only narrows; a real enforce run (with the user's OK) would confirm no new denials (shared-memory names beyond the four learned). |
+| 2026-10-31 | `learnThenEnforce` flaked once under full-suite load | Missing "read" activity record (log stream dropped it); passed alone 3/3 and in two more full runs. Same nature as reference row 25. |
 | 2026-10-29 | GUI: added-but-unlearned apps aren't remembered | They live in memory only; relaunching Menshen drops them. Persist a small list if this becomes annoying. |
 | 2026-10-29 | GUI visual checks | Claude has no Screen Recording permission, so it can't screenshot Menshen; the user checks visually. |
 | 2026-10-29 | Project folder rename | The user renamed `projects/striply` → `projects/menshen` mid-session. Claude memory was moved to the new project key. |

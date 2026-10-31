@@ -129,11 +129,12 @@ The compiled profile is kept short and auditable. Rules with the same action and
 - **Learn** runs `sandbox-exec` with `(allow default (with report))`, which makes the kernel log every operation in SBPL's own vocabulary. Those lines are never saved to the log store, so Menshen reads them from a live `log stream`. It keeps running a sandboxed canary until the canary's denial appears in the stream, and only then launches the app. Lines are filtered to the app's process tree.
 - **Generalize:** paths collapse onto what owns them.
   - The bundle is read and exec only.
-  - The app's own `~/Library/*/<app>` folders and the per-user temp root get full read/write.
+  - The app's own `~/Library/*/<app>` folders, its own Darwin cache folders (`/private/var/folders/…/C/<app>`) and the shared temp folder (`…/T`) get full read/write. Other apps' caches don't.
   - Under `~/Documents` and the other content roots, access is granted per root.
   - System locations are read-only.
   - Anything else stays an exact path, and becomes a folder rule once a folder has 4+ files.
-  - Mach services, preference domains, IOKit classes and ports stay exact.
+  - Mach services (looked up or registered), preference domains, IOKit classes, ports, shared-memory names and written sysctls stay exact.
+  - `menshen rebuild <app>` regenerates a config from its saved captures, so configs learned earlier pick up these rules without running the app again.
 - **Hardening** rules are always present, and older configs pick up new ones automatically when compiled. Besides credential folders, browsers, mail and messages, shell history and startup items, a **sanity set** covers secrets by name anywhere in your home (`.env*`, `*.pem *.key *.p12 *.pfx *.kdbx`, `id_rsa*`/`id_ed25519*`, `.git-credentials`), more credential stores (`.npmrc`, `.pypirc`, `.azure`, `.config/op`, `.password-store`, `.pgpass`…), chat-app sessions (Slack, Discord, Signal, Telegram, WhatsApp) and personal data (Contacts, Calendars, the Photos library). The full list is in [`Hardening.swift`](Sources/MenshenCore/Hardening.swift). The app's own data inside a protected folder (its own group container, or a browser's own profile) is re-allowed.
 
 Design records: [`docs/DECISIONS.md`](docs/DECISIONS.md). Platform research: [`docs/reference/apple-app-sandbox.md`](docs/reference/apple-app-sandbox.md).

@@ -23,6 +23,12 @@ All notable changes are documented here.
   - `AccessSummary` / `RuleText` / `BlockedSummary` (plain-language summaries)
 - Tests: 44 in total. They cover swap round trip, refusals, rollback (mutation-checked), never deleting a foreign bundle, the end-to-end launcher via LaunchServices with a dummy app, `Library`, and the summaries.
 
+### Changed: learned rules stay as narrow as what the kernel reported
+- **Darwin folder:** learning no longer owns the whole per-user `/private/var/folders/xx/yyy`, which holds every app's caches (536 folders on the test Mac). An app owns the shared temp folder (`…/T`) and only its own folders in `…/C` and `…/0`, found the same way as its `~/Library` folders. Writes to another app's caches are learned exactly and reported as writes outside. Temp-only allows the same places.
+- **Names kept:** `mach-register`, `ipc-posix-*` (shared memory, semaphores) and `sysctl-write` rules now name what the app used, instead of allowing every name. A filter-less `mach-register` let an app register any service name in your login session; per-pid registrations (AppKit's `com.apple.axserver`, `coredrag`, …) are already allowed by `system.sb`, so they're left out of the profile.
+- **`menshen rebuild <app>`** regenerates a config from its saved learn captures without running the app, keeping your rules, profiles, limits, switches and switched-off rules (backed up first; refuses if a capture is missing). Run it on configs learned before this change. A replaced app's launcher can't read rebuilt configs until it's refreshed (Restore, then Replace).
+- Kernel tests (`NarrowingTests`, `nameprobe` fixture): another app's cache folder, shared memory, global service registration and sysctl writes are blocked unless learned, each with a control that passes without the restriction; mutation-checked. ADR-007.
+
 ### Added: Restricted Sandbox (drop an app to run it confined)
 - Choose once what dropped apps may do (sidebar drop zone → Settings…, or the toolbar lock): network on/off, other programs on/off, its own `~/Library` data on/off, **read & write folders** and **read-only folders**. Everything else in your home folder is unreadable, writes go only to those folders and temp, and the sanity set is always blocked, even inside your folders.
 - **Drop any app** on Menshen's Dock icon or the drop zone and it runs right away in that sandbox. No learning; blocked attempts are logged and shown live on its Dashboard. Unlearned apps also get **Run Restricted**.

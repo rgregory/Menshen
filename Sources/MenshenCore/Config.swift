@@ -34,6 +34,9 @@ public enum FilterKind: String, Codable, Sendable {
     case local
     case preferenceDomain = "preference-domain"
     case iokitUserClientClass = "iokit-user-client-class"
+    /// A POSIX shared-memory or semaphore name.
+    case ipcPosixName = "ipc-posix-name"
+    case sysctlName = "sysctl-name"
     /// Comma-separated file extensions ("mp4,mkv"), matched anywhere, in any letter case.
     case fileTypes = "file-types"
     /// A regex on full paths under the home folder (secrets by name, e.g. .env files).

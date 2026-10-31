@@ -45,8 +45,45 @@ func allow(_ op: String, _ target: String, count: Int = 1) -> SandboxEvent {
         #expect(support.category == nil, "writes to the app's own folders are not 'outside'")
         #expect(support.seen == 1)
         #expect(ownFolder(c, "~/Library/Caches/com.example.foo") != nil)
-        #expect(ownFolder(c, "/private/var/folders/aa/bb") != nil)
+        #expect(ownFolder(c, "/private/var/folders/aa/bb/T") != nil)
         #expect(c.anchors.contains("~/Library/Application Support/Foo"))
+    }
+
+    /// The Darwin folder holds every app's caches: the app owns the shared temp and only its own
+    /// folders in C and 0. Writes to another app's caches are learned exactly and reported.
+    @Test func darwinFolderOwnsOnlyTempAndTheAppsCaches() throws {
+        let c = build([
+            allow("file-write-data", "/private/var/folders/aa/bb/C/com.example.foo/com.apple.metal/x"),
+            allow("file-read-data", "/private/var/folders/aa/bb/0/com.example.foo/y"),
+            allow("file-write-data", "/private/var/folders/aa/bb/C/com.other.app/z"),
+        ])
+        #expect(ownFolder(c, "/private/var/folders/aa/bb/C/com.example.foo")?.seen == 1)
+        #expect(ownFolder(c, "/private/var/folders/aa/bb/0/com.example.foo") != nil)
+        #expect(ownFolder(c, "/private/var/folders/aa/bb") == nil, "not the whole Darwin folder")
+        #expect(!c.anchors.contains("/private/var/folders/aa/bb"))
+        let other = try #require(learned(c, "file-write*", .literal, "/private/var/folders/aa/bb/C/com.other.app/z"))
+        #expect(other.category == .writeOutside)
+    }
+
+    @Test func registrationsSharedMemoryAndSysctlWritesKeepTheirNames() {
+        let c = build([
+            allow("mach-register", "com.apple.axserver (per-pid)"),
+            allow("mach-register", "com.example.foo.helper"),
+            allow("ipc-posix-shm-write-create", "com.apple.AppleDatabaseChanged"),
+            allow("ipc-posix-sem-open", "foo.lock"),
+            allow("sysctl-write", "kern.tcsm_enable"),
+        ])
+        #expect(learned(c, "mach-register", .localName, "com.apple.axserver") != nil)
+        #expect(learned(c, "mach-register", .globalName, "com.example.foo.helper") != nil)
+        #expect(learned(c, "ipc-posix-shm-write-create", .ipcPosixName, "com.apple.AppleDatabaseChanged") != nil)
+        #expect(learned(c, "ipc-posix-sem-open", .ipcPosixName, "foo.lock") != nil)
+        #expect(learned(c, "sysctl-write", .sysctlName, "kern.tcsm_enable") != nil)
+        #expect(!c.rules.contains { $0.filter == .any && $0.operations.contains { $0 == "mach-register" || $0 == "sysctl-write" || $0.hasPrefix("ipc-posix") } })
+        let profile = SBPLCompiler(environment: env).compile(c)
+        #expect(profile.contains("(ipc-posix-name \"com.apple.AppleDatabaseChanged\")"))
+        #expect(profile.contains("(sysctl-name \"kern.tcsm_enable\")"))
+        #expect(profile.contains("(global-name \"com.example.foo.helper\")"))
+        #expect(!profile.contains("com.apple.axserver"), "per-pid registrations are already allowed by system.sb")
     }
 
     func ownFolder(_ c: MenshenConfig, _ path: String) -> Rule? {
@@ -59,7 +96,7 @@ func allow(_ op: String, _ target: String, count: Int = 1) -> SandboxEvent {
         let c = build([allow("file-read-data", "\(testHome)/Library/Preferences/com.example.foo/rc")])
         let rule = try #require(ownFolder(c, "~/Library/Preferences/com.example.foo"))
         #expect(rule.seen == 1)
-        #expect(ownFolder(c, "/private/var/folders/aa/bb")?.seen == 0, "the user temp root is always owned")
+        #expect(ownFolder(c, "/private/var/folders/aa/bb/T")?.seen == 0, "the shared temp folder is always owned")
     }
 
     @Test func sensitiveAccessIsFlaggedAndNotLearned() throws {

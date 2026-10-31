@@ -99,11 +99,51 @@ public enum Learn {
             captures = previous.learning.captures + captures
             runs = previous.learning.runs + 1
         }
+        let normalPath = Swap.records(environment).first { $0.hiddenPath == target.identity.path }?.appPath
+            ?? target.identity.path
+        let config = regenerate(target: target, normalPath: normalPath, captures: captures, runs: runs,
+                                warnings: warnings, previous: previous, keepEdits: options.merge,
+                                environment: environment)
+        let backupURL = try config.save(to: configURL)
+        return LearnSummary(configURL: configURL, captureURL: captureURL, backupURL: backupURL, config: config,
+                            eventsThisRun: result.events.count, processes: result.processes,
+                            outcome: result.outcome)
+    }
+
+    /// Regenerates a config from the learn captures it lists, without running the app, so that
+    /// improvements in how reports become rules reach configs learned earlier. Keeps your rules,
+    /// profiles, limits, switches and switched-off rules, like a merge.
+    public static func rebuild(
+        configURL: URL, environment: MenshenEnvironment = .current()
+    ) throws -> (config: MenshenConfig, backupURL: URL?) {
+        let previous = try MenshenConfig.load(configURL)
+        let captures = previous.learning.captures
+        let missing = captures.filter { !FileManager.default.fileExists(atPath: $0) }
+        guard !captures.isEmpty, missing.isEmpty else {
+            // A partial rebuild would silently drop rules the app needs.
+            throw MenshenError.refused(captures.isEmpty
+                ? "the config lists no learn captures; run `menshen learn` instead"
+                : "learn capture(s) missing: \(missing.joined(separator: ", ")); run `menshen learn` instead")
+        }
+        let t = previous.target
+        let target = ResolvedTarget(identity: t, bundlePath: t.path == t.executable ? nil : t.path,
+                                    isAppleSigned: false, hasAppSandbox: false)
+        var config = regenerate(target: target, normalPath: t.path, captures: captures, runs: previous.learning.runs,
+                                warnings: previous.learning.warnings, previous: previous, keepEdits: true,
+                                environment: environment)
+        config.learning.warnings = config.learning.warnings.reduce(into: []) { if !$0.contains($1) { $0.append($1) } }
+        return (config, try config.save(to: configURL))
+    }
+
+    /// Captures → config. Keeps your rules, profiles and limits from `previous`, and with
+    /// `keepEdits` also its switches and rule actions.
+    static func regenerate(
+        target: ResolvedTarget, normalPath: String, captures: [String], runs: Int, warnings: [String],
+        previous: MenshenConfig?, keepEdits: Bool, environment: MenshenEnvironment
+    ) -> MenshenConfig {
         // Configs always describe the app at its normal location. Captures recorded while it was
         // replaced (running from `.Name.menshen.app`) are mapped back, so merging captures from
         // before and after a Replace/Restore gives the same rules.
-        let normalPath = Swap.records(environment).first { $0.hiddenPath == target.identity.path }?.appPath
-            ?? target.identity.path
         let hidden = Swap.hiddenPath(for: normalPath)
         var events: [SandboxEvent] = []
         for path in captures {
@@ -124,13 +164,10 @@ public enum Learn {
             config.profiles = previous.profiles
             config.limits = previous.limits
         }
-        if let previous, options.merge {
+        if let previous, keepEdits {
             config.keepEdits(from: previous)
         }
-        let backupURL = try config.save(to: configURL)
-        return LearnSummary(configURL: configURL, captureURL: captureURL, backupURL: backupURL, config: config,
-                            eventsThisRun: result.events.count, processes: result.processes,
-                            outcome: result.outcome)
+        return config
     }
 
     /// Pure: events → config. Used by `learn` and by tests.

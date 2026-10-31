@@ -19,7 +19,8 @@ public struct MenshenEnvironment: Sendable {
     public var home: String
     public var dataRoot: URL
     public var logsRoot: URL
-    /// Per-user Darwin temp/cache roots (`/private/var/folders/xx/yyy`), learned as one anchor.
+    /// Per-user Darwin folder (`/private/var/folders/xx/yyy`). Not an anchor itself: it holds
+    /// every app's caches. See `userTempDir` and `userAppAreas`.
     public var userTempRoot: String?
 
     public init(home: String, dataRoot: URL, logsRoot: URL, userTempRoot: String?) {
@@ -62,6 +63,10 @@ public struct MenshenEnvironment: Sendable {
     public func configURL(_ key: String) -> URL { profilesDir.appendingPathComponent("\(key).json") }
     /// Private temp folder for the Temp-only profile (exported to the app as TMPDIR).
     public func privateTemp(_ key: String) -> URL { dataRoot.appendingPathComponent("temp/\(key)") }
+    /// `…/T`: the temp folder every unsandboxed app of this user shares (NSTemporaryDirectory).
+    public var userTempDir: String? { userTempRoot.map { $0 + "/T" } }
+    /// `…/C` (caches) and `…/0`: one folder per app, like the ~/Library areas.
+    var userAppAreas: [String] { userTempRoot.map { [$0 + "/C", $0 + "/0"] } ?? [] }
 
     /// `/private/var/folders/xx/yyy` — parent of the user's T (temp) and C (cache) directories.
     static func darwinUserRoot() -> String? {
