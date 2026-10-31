@@ -75,3 +75,15 @@
 **What happened:** Reviewing Fastpotify's learned `mach-register`, I tested name filters under a bare `(allow default)` profile and said denying registration would break VoiceOver and drag and drop. Under Menshen's real profile the answer was different: `system.sb`, which every profile imports, already allows every per-pid registration, so that deny would have changed nothing, and the actual hole was *global* registration. The kernel test against the compiled profile caught it.
 
 **Rule:** Before calling a rule risky, necessary or redundant, check what `system.sb` and the always-on rules already grant, and test it in the full compiled profile, not a minimal one.
+
+## 2026-10-31 · A mutation that breaks the profile proves nothing
+
+**What happened:** To mutation-check Shentu's home rule, I cut `(deny file-read* file-write*\n (subpath HOME)` out of a deny statement that had two filters. The leftover `(subpath "/Volumes"))` made the profile unloadable, so sandbox-exec failed and the "must now succeed" read failed for the wrong reason. It looked like the test was broken, not the mutation.
+
+**Rule:** Mutate by pointing a filter somewhere harmless (`/nonexistent`) or by removing a whole statement, and require that the mutated text still contains what you replaced. A mutated profile has to load. Otherwise the check measures a syntax error.
+
+## 2026-10-31 · Menshen's trunk is `gui-replace-dashboard`, not `main`
+
+**What happened:** To pick up a sibling's commit, I reset my branch to it. That commit was based on an older trunk commit, so for a moment my branch lost the two newest trunk commits. `main` is still at v0.1.0, so "based on main" says nothing.
+
+**Rule:** Before rebasing onto or cherry-picking another branch, run `git log --oneline <trunk>..<branch>` and `git merge-base`. Start from the trunk tip (`gui-replace-dashboard`) and cherry-pick onto it. Never reset to another session's branch.
