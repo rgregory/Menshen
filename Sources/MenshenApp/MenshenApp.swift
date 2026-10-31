@@ -42,11 +42,22 @@ struct RootView: View {
             SidebarView(store: store)
                 .navigationSplitViewColumnWidth(min: 220, ideal: 250)
         } detail: {
-            if let item = store.selectedItem {
-                DetailView(store: store, item: item)
-            } else {
-                ContentUnavailableView("No app selected", systemImage: "shield.lefthalf.filled",
-                                       description: Text("Add an app with + or drop one here, then learn how it behaves."))
+            Group {
+                if store.tab != .overview, let item = store.selectedItem {
+                    DetailView(store: store, item: item)
+                } else {
+                    OverviewView(store: store)
+                }
+            }
+            .toolbar {
+                // In the toolbar, the tabs get their own space and can't be clipped by a narrow window.
+                ToolbarItem(placement: .principal) {
+                    Picker("View", selection: Bindable(store).tab) {
+                        ForEach(DetailTab.allCases) { Text($0.rawValue).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                }
             }
         }
         .alert("Menshen", isPresented: Binding(get: { store.message != nil }, set: { if !$0 { store.message = nil } })) {
@@ -234,6 +245,14 @@ struct DetailView: View {
                     Text(item.entry?.config.target.bundleId ?? item.appPath).font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
+                if store.tab == .dashboard {
+                    let session = store.sessions[item.id]
+                    if let session, session.kind == .enforce {
+                        RunCounters(records: session.records)
+                    } else if !store.lastRecords.isEmpty {
+                        RunCounters(records: store.lastRecords)
+                    }
+                }
             }
             .padding(.horizontal).padding(.vertical, 10)
             Divider()
@@ -242,16 +261,7 @@ struct DetailView: View {
             case .session: SessionView(store: store, item: item)
             case .history: HistoryView(store: store, item: item)
             case .config: ConfigView(store: store, item: item)
-            }
-        }
-        .toolbar {
-            // In the toolbar, the tabs get their own space and can't be clipped by a narrow window.
-            ToolbarItem(placement: .principal) {
-                Picker("View", selection: Bindable(store).tab) {
-                    ForEach(DetailTab.allCases) { Text($0.rawValue).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
+            case .overview: EmptyView()     // shown by RootView instead
             }
         }
     }

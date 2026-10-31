@@ -5,6 +5,7 @@ import Observation
 import UniformTypeIdentifiers
 
 enum DetailTab: String, CaseIterable, Identifiable {
+    case overview = "Overview"
     case dashboard = "Dashboard"
     case session = "Session"
     case history = "History"
@@ -66,7 +67,7 @@ final class AppStore {
     var entries: [AppEntry] = []
     var added: [AppItem] = []
     private(set) var selection: String?
-    var tab: DetailTab = .dashboard
+    var tab: DetailTab = .overview
     var message: String?
 
     // Session tab
@@ -82,6 +83,10 @@ final class AppStore {
 
     // History tab
     var history: [SessionInfo] = []
+
+    // Overview: each learned app's newest enforce run, summarized (cached per log file)
+    var overview: [String: (date: Date, activity: ActivitySummary)] = [:]
+    @ObservationIgnored private var overviewCache: [String: (stamp: Date?, activity: ActivitySummary)] = [:]
     private(set) var historySelection: String?
     var historyRows: [EventRow] = []
     var historyFilter: RowFilter = .all
@@ -95,6 +100,8 @@ final class AppStore {
 
     // Add Permission sheet
     var addingPermission = false
+    /// Opened from the Dashboard: the new permission is saved at once, not added to Config's draft.
+    var permissionAppliesNow = false
     var newAccess: CustomAccess = .read
     var newKind: PermissionKind = .category
     var newCategory: FileCategory = .media
@@ -126,6 +133,7 @@ final class AppStore {
 
     func refresh() {
         entries = Library.apps(environment)
+        refreshOverview()
         added.removeAll { a in entries.contains { $0.id == a.id } }
         if let key = selection {
             history = Library.sessions(key, environment)
@@ -138,7 +146,33 @@ final class AppStore {
         }
     }
 
+    /// The newest enforce run of every learned app. Logs are re-read only when they change.
+    private func refreshOverview() {
+        var result: [String: (date: Date, activity: ActivitySummary)] = [:]
+        for entry in entries {
+            guard let newest = Library.sessions(entry.id, environment).first(where: { $0.kind == .enforce }) else { continue }
+            let stamp = (try? FileManager.default.attributesOfItem(atPath: newest.url.path))?[.modificationDate] as? Date
+            let activity: ActivitySummary
+            if let cached = overviewCache[newest.url.path], cached.stamp == stamp {
+                activity = cached.activity
+            } else {
+                activity = ActivitySummary.make(Library.records(newest.url))
+                overviewCache[newest.url.path] = (stamp, activity)
+            }
+            result[entry.id] = (newest.date, activity)
+        }
+        overview = result
+    }
+
+    /// Opens one app's Dashboard (from the Overview).
+    func open(_ item: AppItem) {
+        select(item.id)
+        tab = .dashboard
+    }
+
     func select(_ key: String?) {
+        // Picking an app while the Overview is showing opens that app.
+        if key != nil && tab == .overview { tab = .dashboard }
         guard key != selection else { return }
         selection = key
         historySelection = nil
@@ -463,23 +497,46 @@ final class AppStore {
     }
 
     func addPermission(_ key: String) {
-        guard var draft = drafts[key] else { return }
+        let kind = newKind, access = newAccess, category = newCategory, value = newValue, env = environment
         do {
-            switch newKind {
-            case .category:
-                draft.addCustom(newAccess, category: newCategory)
-            case .fileTypes:
-                draft.addCustom(newAccess, fileTypes: try MenshenConfig.fileExtensions(newValue))
-            case .folder:
-                guard !newValue.isEmpty else { throw MenshenError.usage("choose a folder") }
-                draft.addCustom(newAccess, folder: newValue, environment: environment)
+            let types = kind == .fileTypes ? try MenshenConfig.fileExtensions(value) : []
+            if kind == .folder && value.isEmpty { throw MenshenError.usage("choose a folder") }
+            let change: (inout MenshenConfig) -> Void = { config in
+                switch kind {
+                case .category: config.addCustom(access, category: category)
+                case .fileTypes: config.addCustom(access, fileTypes: types)
+                case .folder: config.addCustom(access, folder: value, environment: env)
+                }
             }
-            drafts[key] = draft
+            if permissionAppliesNow {
+                update(key, change)
+            } else {
+                guard var draft = drafts[key] else { return }
+                change(&draft)
+                drafts[key] = draft
+            }
             addingPermission = false
+            permissionAppliesNow = false
             newValue = ""
         } catch {
             message = "\(error)"
         }
+    }
+
+    /// Lets the app read every file of a kind (as macOS classifies them), or stops it, right away.
+    func applyCategory(_ key: String, _ category: FileCategory, on: Bool) {
+        update(key) { config in
+            if on {
+                config.addCustom(.read, category: category)
+            } else {
+                config.rules.removeAll { $0.source == .custom && $0.label == category.rawValue }
+            }
+        }
+    }
+
+    /// Removes one of your rules right away (from the Dashboard).
+    func removeRuleNow(_ key: String, ruleID: String) {
+        update(key) { $0.removeCustom(ruleID) }
     }
 
     /// Turns a profile on or off for an app right away (saved with a backup of the previous config).

@@ -24,7 +24,7 @@ struct ConfigView: View {
                 }
                 .frame(width: 200)
                 TextField("Search rules", text: Bindable(store).ruleSearch)
-                Button("Add Permission…") { store.addingPermission = true }
+                Button("Add Permission…") { store.permissionAppliesNow = false; store.addingPermission = true }
                 Button("Show Sandbox Rules") { store.showSandboxRules(key) }
                 Button("Revert") { store.revert(key) }.disabled(!dirty)
                 Button("Save") { store.save(key) }.disabled(!dirty).keyboardShortcut("s")
@@ -72,7 +72,8 @@ struct ConfigView: View {
             }
         }
         .padding()
-        .sheet(isPresented: Bindable(store).addingPermission) { AddPermissionSheet(store: store, key: key) }
+        .sheet(isPresented: Binding(get: { store.addingPermission && !store.permissionAppliesNow },
+                                    set: { if !$0 { store.addingPermission = false } })) { AddPermissionSheet(store: store, key: key) }
         .sheet(isPresented: Binding(get: { store.sbplText != nil }, set: { if !$0 { store.sbplText = nil } })) {
             VStack(alignment: .leading) {
                 Text("Sandbox rules (SBPL), as compiled for the kernel").font(.headline)

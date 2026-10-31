@@ -46,6 +46,12 @@
 
 **Rule:** Every restriction Menshen adds gets a kernel test that runs a real process and checks for EPERM, with a control showing the same action succeeds without the restriction.
 
+## 2026-10-31 · A flaky test can be a real finding about the product
+
+**What happened:** `learnThenEnforce` started failing 2–4 runs in 8 after new kernel suites landed. Skipping either new suite didn't fix it; a failing run showed 1 record, 0 denials, drained = true. Running the test next to a process that floods sandbox reports failed it 5 of 5, against 5 of 5 passing without. The kernel/log system drops reports under load and says nothing. That is a limit of Menshen's logs, not just of the tests.
+
+**Rule:** For a flaky kernel test, capture the failing run's own numbers, then reproduce the suspected condition on purpose (here: a report flood) and compare pass rates. Fix the test setup (serialize the suites) and record the product limit (finding 26).
+
 ## 2026-10-31 · Shell one-liners in tests fail for reasons of their own
 
 **What happened:** In the Restricted Sandbox tests, checks of the form "this should fail" passed for the wrong reason. `/bin/sh` is a shim that starts bash, and "no other programs" blocked that, so every `sh -c …` failed. Then `read l < file` returned 1 only because the test file had no trailing newline. The `.env` check "passed" while `.env` was actually readable. Only a positive control in the same profile (a check that must succeed) exposed both.

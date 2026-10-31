@@ -34,6 +34,9 @@ All notable changes are documented here.
 - **Drop any app** on Menshen's Dock icon or the drop zone and it runs right away in that sandbox. No learning; blocked attempts are logged and shown live on its Dashboard. Unlearned apps also get **Run Restricted**.
 - CLI: `menshen box <App> [--network] [--programs] [--no-own-data] [--rw DIR]… [--ro DIR]… [--save]`.
 - The Dashboard counts a blocked connection as network activity and a blocked launch as a launch (they showed only under Blocked, with "0 network").
+- **Overview** tab (opens first): every learned app on one screen with its newest run (live while running): events, blocked, network, disk, launches, services. On the right, switches for **Network**, **Write files** and **Other programs** (on = allowed; off turns on Offline, Temp-only or No other programs). Click an app to open its Dashboard.
+- Dashboard: **Profiles** and a new **File access** card sit right under the status bar. File access has a switch each for Media, Images and Documents (`menshen allow … media`), your other rules with a remove button, and Add File Types or Folder…; changes save at once. Profile switches line up in one column. **Replace…/Restore…** moved into the status bar, with the team and code hash in its status line.
+- Tests: every suite that runs sandboxed processes is nested in a serialized `KernelTests` parent. Concurrent learn runs flooded the kernel's reports and made other tests' logs come up empty (`learnThenEnforce` failed 2–4 runs in 8; now 8 of 8 pass). A full run takes about 15 s instead of 7.
 - Kernel tests (`RestrictedTests`): an escape probe as the dropped app, with an unsandboxed control and a mutation check, plus logging through the real session path. ADR-006.
 
 ### Changed: instant "can it be wrapped?" check

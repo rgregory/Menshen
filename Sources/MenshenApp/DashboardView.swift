@@ -12,6 +12,13 @@ struct DashboardView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 StatusStrip(store: store, item: item, session: session, problem: problem)
+                // The switches you use most sit right under the status, above the activity.
+                if let entry = item.entry {
+                    HStack(alignment: .top, spacing: 16) {
+                        ProfilesCard(store: store, entry: entry).frame(maxWidth: .infinity, alignment: .top)
+                        FileAccessCard(store: store, entry: entry).frame(maxWidth: .infinity, alignment: .top)
+                    }
+                }
                 if let session, session.kind == .enforce {
                     ActivityPanel(title: session.running ? "Live activity" : "This run", live: session.running,
                                   records: session.records)
@@ -33,8 +40,6 @@ struct DashboardView: View {
                         Card("Sensitive", systemImage: "lock.shield", items: summary.sensitive,
                              empty: "Nothing sensitive was touched while learning",
                              footer: "\(summary.protectedCount) sensitive locations and behaviors are protected.")
-                        ProfilesCard(store: store, entry: entry)
-                        ReplaceCard(store: store, item: item, entry: entry, problem: problem)
                     }
                 } else {
                     GroupBox {
@@ -76,12 +81,10 @@ struct StatusStrip: View {
                     Text("\(session.kind.rawValue) · \(elapsed(since: session.startedAt, now: context.date))")
                         .font(.headline)
                 }
-                Divider().frame(height: 24)
-                Metric(value: session.total, label: "events")
-                Metric(value: session.denied, label: "blocked", color: session.denied > 0 ? .red : .primary)
-                if session.kind == .enforce {
-                    Metric(value: session.byCategory["network", default: 0], label: "network")
-                    Metric(value: session.byCategory["exec", default: 0], label: "launches")
+                if session.kind == .learn {     // enforce runs show their counters in the app header
+                    Divider().frame(height: 24)
+                    Metric(value: session.total, label: "events")
+                    Metric(value: session.denied, label: "blocked", color: session.denied > 0 ? .red : .primary)
                 }
                 Spacer()
                 Button("Stop \(item.name)", role: .destructive) { store.stop(item.id) }
@@ -94,6 +97,9 @@ struct StatusStrip: View {
                 Spacer()
                 if problem == nil {
                     Button("Learn") { store.learn(item) }
+                    if let entry = item.entry {
+                        ReplaceButton(store: store, item: item, entry: entry)
+                    }
                     if item.entry == nil {
                         Button("Run Restricted") { store.runRestricted(item) }
                             .buttonStyle(.borderedProminent)
@@ -129,9 +135,11 @@ struct StatusStrip: View {
         if let problem { return problem }
         if let entry = item.entry {
             let c = entry.config
-            var text = "Learned from \(c.learning.events) reports over \(c.learning.runs) run\(c.learning.runs == 1 ? "" : "s")."
-            if entry.swap == nil { text += " Replace it to protect it however it's opened, or Enforce to run it protected now." }
-            return text
+            let identity = "Team \(c.target.teamId ?? "none") · code hash \(String((c.target.cdhash ?? "none").prefix(12)))"
+            if let swap = entry.swap {
+                return "Opening it from the Dock, Finder or Spotlight runs it under Menshen. Original (untouched): \(swap.hiddenPath). \(identity)"
+            }
+            return "Learned from \(c.learning.events) reports over \(c.learning.runs) run\(c.learning.runs == 1 ? "" : "s"). Replace it to protect it however it's opened, or Enforce to run it protected now. \(identity)"
         }
         return item.appPath
     }
@@ -228,33 +236,21 @@ struct AccessBadge: View {
     }
 }
 
-struct ReplaceCard: View {
+/// Replace… or Restore…, with the confirmation that says exactly what moves where.
+struct ReplaceButton: View {
     let store: AppStore
     let item: AppItem
     let entry: AppEntry
-    let problem: String?
 
     var body: some View {
-        GroupBox {
-            VStack(alignment: .leading, spacing: 8) {
-                if let swap = entry.swap {
-                    Text("Replaced. Opening \(item.name) from the Dock, Finder or Spotlight runs it under Menshen.")
-                    Text("Original (untouched): \(swap.hiddenPath)").font(.caption).foregroundStyle(.secondary)
-                    Button("Restore Original…") { store.confirmingRestore = true }
-                } else {
-                    Text("Put a launcher in its place so it always runs under Menshen, however it's opened.")
-                        .foregroundStyle(.secondary)
-                    Button("Replace \(item.name)…") { store.confirmingReplace = true }
-                        .disabled(problem != nil || store.sessions[item.id]?.running == true)
-                }
-                Divider()
-                LabeledContent("Team", value: entry.config.target.teamId ?? "none")
-                LabeledContent("Code hash", value: String((entry.config.target.cdhash ?? "none").prefix(12)))
+        Group {
+            if entry.swap != nil {
+                Button("Restore…") { store.confirmingRestore = true }
+                    .help("Remove Menshen's launcher and put the original app back")
+            } else {
+                Button("Replace…") { store.confirmingReplace = true }
+                    .help("Put a launcher in its place so it always runs under Menshen, however it's opened")
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(4)
-        } label: {
-            Label("Replace", systemImage: "arrow.triangle.swap").font(.headline)
         }
         .confirmationDialog("Replace \(item.name)?", isPresented: Bindable(store).confirmingReplace) {
             Button("Replace") { store.replace(item) }
@@ -284,30 +280,28 @@ struct ActivityPanel: View {
 
     var body: some View {
         let a = ActivitySummary.make(records)
-        let disk = a.counts["read", default: 0] + a.counts["write", default: 0] + a.counts["write-outside", default: 0]
+        // The counters are in the app header; here only tiles with something in them, and one
+        // line for the rest.
+        let tiles: [(String, String, [ActivitySummary.Entry], String, Color)] = [
+            ("Blocked", "hand.raised", a.blockedTop, "nothing blocked", .red),
+            ("Network", "network", a.network, "no network activity", .accentColor),
+            ("Disk", "internaldrive", a.disk, "no file activity outside system files", .accentColor),
+            ("Launches", "terminal", a.launches, "no other programs", .accentColor),
+            ("Services", "gearshape.2", a.services, "no service lookups", .accentColor),
+            ("Devices", "cpu", a.devices, "no devices", .accentColor),
+        ]
+        let quiet = tiles.filter { $0.2.isEmpty }.map(\.3)
         GroupBox {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 22) {
-                    Metric(value: a.total, label: "events")
-                    Metric(value: a.blocked, label: "blocked", color: a.blocked > 0 ? .red : .primary)
-                    Metric(value: a.counts["network", default: 0], label: "network")
-                    Metric(value: disk, label: "disk")
-                    Metric(value: a.counts["exec", default: 0], label: "launches")
-                    Metric(value: a.counts["service", default: 0], label: "services")
-                    Spacer()
-                }
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: 12, alignment: .top)],
-                          alignment: .leading, spacing: 12) {
-                    ActivityTile(title: "Blocked", systemImage: "hand.raised", entries: a.blockedTop,
-                                 empty: "Nothing blocked", tint: .red)
-                    ActivityTile(title: "Network", systemImage: "network", entries: a.network, empty: "No network activity")
-                    ActivityTile(title: "Disk", systemImage: "internaldrive", entries: a.disk,
-                                 empty: "No file activity outside system files")
-                    ActivityTile(title: "Launches", systemImage: "terminal", entries: a.launches, empty: "No other programs")
-                    ActivityTile(title: "Services", systemImage: "gearshape.2", entries: a.services, empty: "No service lookups")
-                    if !a.devices.isEmpty {
-                        ActivityTile(title: "Devices", systemImage: "cpu", entries: a.devices, empty: "")
+            VStack(alignment: .leading, spacing: 10) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 240), spacing: 10, alignment: .top)],
+                          alignment: .leading, spacing: 10) {
+                    ForEach(tiles.filter { !$0.2.isEmpty }, id: \.0) { t in
+                        ActivityTile(title: t.0, systemImage: t.1, entries: t.2, empty: "", tint: t.4)
                     }
+                }
+                if !quiet.isEmpty {
+                    Text(quiet.joined(separator: " · ").prefix(1).uppercased() + quiet.joined(separator: " · ").dropFirst() + ".")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 if !records.isEmpty {
                     Divider()
@@ -344,21 +338,25 @@ struct ActivityTile: View {
     var tint: Color = .accentColor
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 4) {
             Label(title, systemImage: systemImage).font(.subheadline.bold())
             if entries.isEmpty {
                 Text(empty).font(.caption).foregroundStyle(.secondary)
             }
             ForEach(entries) { e in
-                HStack(alignment: .firstTextBaseline) {
-                    Text(e.label).font(.caption).lineLimit(1).truncationMode(.middle).help(e.label)
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(e.label).font(.caption).lineLimit(1).truncationMode(.middle)
+                        .help(e.detail.hasPrefix("/") ? e.detail : e.label)
                     Spacer(minLength: 6)
-                    if !e.detail.isEmpty { Text(e.detail).font(.caption2).foregroundStyle(.secondary) }
+                    // Paths are in the tooltip; only short details (read, blocked, connect) show.
+                    if !e.detail.isEmpty && !e.detail.hasPrefix("/") {
+                        Text(e.detail).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                    }
                     Text("\(e.count)").font(.caption.monospacedDigit().bold()).foregroundStyle(tint)
                 }
             }
         }
-        .padding(10)
+        .padding(8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
     }
@@ -372,21 +370,27 @@ struct ProfilesCard: View {
     var body: some View {
         let active = Set(entry.config.profiles ?? [])
         GroupBox {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 10) {
+                // Text on the left, every switch in one column on the right.
                 ForEach(Profile.allCases, id: \.self) { profile in
-                    Toggle(isOn: Binding(get: { active.contains(profile) },
-                                         set: { store.applyProfile(entry.id, profile, on: $0) })) {
-                        VStack(alignment: .leading, spacing: 1) {
+                    HStack(alignment: .center, spacing: 16) {
+                        VStack(alignment: .leading, spacing: 2) {
                             Text(profile.title)
                             Text(profile.explanation).font(.caption).foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
+                        Spacer(minLength: 0)
+                        Toggle(profile.title, isOn: Binding(get: { active.contains(profile) },
+                                                            set: { store.applyProfile(entry.id, profile, on: $0) }))
+                            .toggleStyle(.switch)
+                            .labelsHidden()
                     }
-                    .toggleStyle(.switch)
+                    if profile != Profile.allCases.last { Divider() }
                 }
                 Divider()
                 HStack {
-                    Text("Limits").foregroundStyle(.secondary)
+                    Text("Limits")
+                    Spacer(minLength: 16)
                     LimitField(label: "CPU seconds", value: entry.config.limits?.cpuSeconds) {
                         store.applyLimit(entry.id, \.cpuSeconds, $0)
                     }
@@ -394,13 +398,87 @@ struct ProfilesCard: View {
                         store.applyLimit(entry.id, \.memoryMB, $0)
                     }
                 }
-                Text("Applied the next time the app runs. Profiles override what was learned; protections stay on.")
+                Text("Saves automatically; applies the next time the app runs. Profiles override what was learned; protections stay on.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(4)
         } label: {
             Label("Profiles", systemImage: "slider.horizontal.3").font(.headline)
+        }
+    }
+}
+
+/// Broad read access by kind of file, plus your other rules: `menshen allow` on the Dashboard.
+struct FileAccessCard: View {
+    let store: AppStore
+    let entry: AppEntry
+
+    var body: some View {
+        let yours = entry.config.rules.filter { $0.source == .custom }
+        let categories = Set(yours.compactMap(\.label))
+        let others = yours.filter { $0.label == nil }
+        GroupBox {
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(FileCategory.allCases, id: \.self) { category in
+                    HStack(alignment: .center, spacing: 16) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(category.title)
+                            Text("Read \(category.noun) anywhere, as macOS classifies them.")
+                                .font(.caption).foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer(minLength: 0)
+                        Toggle(category.title, isOn: Binding(get: { categories.contains(category.rawValue) },
+                                                             set: { store.applyCategory(entry.id, category, on: $0) }))
+                            .toggleStyle(.switch)
+                            .labelsHidden()
+                    }
+                    Divider()
+                }
+                ForEach(others) { rule in
+                    HStack {
+                        Text(RuleText.describe(rule)).lineLimit(1).truncationMode(.middle)
+                        Spacer(minLength: 16)
+                        Button { store.removeRuleNow(entry.id, ruleID: rule.id) } label: { Image(systemName: "minus.circle") }
+                            .buttonStyle(.borderless).help("Remove this rule")
+                    }
+                }
+                VStack(alignment: .leading, spacing: 6) {
+                    Button("Add File Types or Folder…") {
+                        store.newKind = .fileTypes
+                        store.permissionAppliesNow = true
+                        store.addingPermission = true
+                    }
+                    Text("Saves automatically; applies the next time the app runs. Protected files (keys, .env, keychains) stay blocked.").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(4)
+        } label: {
+            Label("File access", systemImage: "folder.badge.plus").font(.headline)
+        }
+        .sheet(isPresented: Binding(get: { store.addingPermission && store.permissionAppliesNow },
+                                    set: { if !$0 { store.addingPermission = false; store.permissionAppliesNow = false } })) {
+            AddPermissionSheet(store: store, key: entry.id)
+        }
+    }
+}
+
+/// The run's counters, for the app header: live while it runs, otherwise its newest run.
+struct RunCounters: View {
+    let records: [EnforceRecord]
+
+    var body: some View {
+        let a = ActivitySummary.make(records)
+        HStack(spacing: 18) {
+            Metric(value: a.total, label: "events")
+            Metric(value: a.blocked, label: "blocked", color: a.blocked > 0 ? .red : .primary)
+            Metric(value: a.counts["network", default: 0], label: "network")
+            Metric(value: a.counts["read", default: 0] + a.counts["write", default: 0]
+                   + a.counts["write-outside", default: 0], label: "disk")
+            Metric(value: a.counts["exec", default: 0], label: "launches")
+            Metric(value: a.counts["service", default: 0], label: "services")
         }
     }
 }
