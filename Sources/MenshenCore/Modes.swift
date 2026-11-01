@@ -165,7 +165,7 @@ public enum Learn {
             config.limits = previous.limits
         }
         if let previous, keepEdits {
-            config.keepEdits(from: previous)
+            config.keepEdits(from: previous) { environment.abbreviate(environment.expand($0)) }
         }
         return config
     }

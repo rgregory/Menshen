@@ -27,11 +27,14 @@ public struct SBPLCompiler {
             "(version 1)",
             "(deny default)",
             "(import \"system.sb\")",
+        ]
+        out += definitions()
+        out += [
             "",
             ";; --- always on",
             "(allow file-read-metadata)",
         ]
-        let own = t.path == t.executable ? "(literal \(quote(t.executable)))" : "(subpath \(quote(t.path)))"
+        let own = t.path == t.executable ? "(literal \(path(t.executable)))" : "(subpath \(path(t.path)))"
         out.append("(allow file-read* file-map-executable \(own))")
         let profiles = Set(config.profiles ?? [])
         if !profiles.contains(.noLaunch) {  // otherwise the no-launch section allows it, after its deny
@@ -88,7 +91,7 @@ public struct SBPLCompiler {
             if let temp = environment.userTempDir { places.append(temp) }
             places += config.anchors.map(environment.expand)
                 .filter { anchor in environment.userAppAreas.contains { anchor.hasPrefix($0 + "/") } }
-            out.append(statement("allow", ["file-write*"], places.map { "(subpath \(quote($0)))" } + devWrites(config), report: false))
+            out.append(statement("allow", ["file-write*"], places.map { "(subpath \(path($0)))" } + devWrites(config), report: false))
         }
         if profiles.contains(.noLaunch) {
             out.append("(deny process-exec* (subpath \"/\"))")
@@ -246,8 +249,8 @@ public struct SBPLCompiler {
         let value = environment.expand(raw)
         switch filter.kind {
         case .any: return nil
-        case .subpath: return "(subpath \(quote(value)))"
-        case .literal: return "(literal \(quote(value)))"
+        case .subpath: return "(subpath \(path(value)))"
+        case .literal: return "(literal \(path(value)))"
         case .globalName: return "(global-name \(quote(value)))"
         case .xpcServiceName: return "(xpc-service-name \(quote(value)))"
         case .localName: return "(local-name \(quote(value)))"
@@ -257,9 +260,34 @@ public struct SBPLCompiler {
         case .iokitUserClientClass: return "(iokit-user-client-class \(quote(value)))"
         case .ipcPosixName: return "(ipc-posix-name \(quote(value)))"
         case .sysctlName: return "(sysctl-name \(quote(value)))"
-        case .homePattern: return "(require-all (subpath \(quote(environment.home))) (regex #\"\(raw)\"))"
+        case .homePattern: return "(require-all (subpath home-dir) (regex #\"\(raw)\"))"
         case .fileTypes: return "(regex #\"\\.(\(Self.caseInsensitive(raw)))$\")"
         }
+    }
+
+    /// The two machine-specific roots, named once at the top so the rules read the same on
+    /// every Mac: `(home "/Library/Caches/x")`, `(darwin "/C/org.example.app")`. The Darwin
+    /// folder (`/private/var/folders/xx/yyyy`) is the per-user temp and cache root.
+    func definitions() -> [String] {
+        var out = ["", ";; --- this Mac",
+                   "(define home-dir \(quote(environment.home)))",
+                   "(define (home p) (string-append home-dir p))"]
+        if let root = environment.userTempRoot {
+            out.append("(define darwin-dir \(quote(root)))")
+            out.append("(define (darwin p) (string-append darwin-dir p))")
+        }
+        return out
+    }
+
+    /// A path for a filter, written relative to the home or Darwin folder when it's inside one.
+    func path(_ p: String) -> String {
+        if let root = environment.userTempRoot {
+            if p == root { return "darwin-dir" }
+            if p.hasPrefix(root + "/") { return "(darwin \(quote(String(p.dropFirst(root.count)))))" }
+        }
+        if p == environment.home { return "home-dir" }
+        if p.hasPrefix(environment.home + "/") { return "(home \(quote(String(p.dropFirst(environment.home.count)))))" }
+        return quote(p)
     }
 
     func quote(_ s: String) -> String {

@@ -45,7 +45,7 @@ func allow(_ op: String, _ target: String, count: Int = 1) -> SandboxEvent {
         #expect(support.category == nil, "writes to the app's own folders are not 'outside'")
         #expect(support.seen == 1)
         #expect(ownFolder(c, "~/Library/Caches/com.example.foo") != nil)
-        #expect(ownFolder(c, "/private/var/folders/aa/bb/T") != nil)
+        #expect(ownFolder(c, "$DARWIN/T") != nil)
         #expect(c.anchors.contains("~/Library/Application Support/Foo"))
     }
 
@@ -57,11 +57,11 @@ func allow(_ op: String, _ target: String, count: Int = 1) -> SandboxEvent {
             allow("file-read-data", "/private/var/folders/aa/bb/0/com.example.foo/y"),
             allow("file-write-data", "/private/var/folders/aa/bb/C/com.other.app/z"),
         ])
-        #expect(ownFolder(c, "/private/var/folders/aa/bb/C/com.example.foo")?.seen == 1)
-        #expect(ownFolder(c, "/private/var/folders/aa/bb/0/com.example.foo") != nil)
-        #expect(ownFolder(c, "/private/var/folders/aa/bb") == nil, "not the whole Darwin folder")
-        #expect(!c.anchors.contains("/private/var/folders/aa/bb"))
-        let other = try #require(learned(c, "file-write*", .literal, "/private/var/folders/aa/bb/C/com.other.app/z"))
+        #expect(ownFolder(c, "$DARWIN/C/com.example.foo")?.seen == 1)
+        #expect(ownFolder(c, "$DARWIN/0/com.example.foo") != nil)
+        #expect(ownFolder(c, "$DARWIN") == nil, "not the whole Darwin folder")
+        #expect(!c.anchors.contains("$DARWIN"))
+        let other = try #require(learned(c, "file-write*", .literal, "$DARWIN/C/com.other.app/z"))
         #expect(other.category == .writeOutside)
     }
 
@@ -96,7 +96,7 @@ func allow(_ op: String, _ target: String, count: Int = 1) -> SandboxEvent {
         let c = build([allow("file-read-data", "\(testHome)/Library/Preferences/com.example.foo/rc")])
         let rule = try #require(ownFolder(c, "~/Library/Preferences/com.example.foo"))
         #expect(rule.seen == 1)
-        #expect(ownFolder(c, "/private/var/folders/aa/bb/T")?.seen == 0, "the shared temp folder is always owned")
+        #expect(ownFolder(c, "$DARWIN/T")?.seen == 0, "the shared temp folder is always owned")
     }
 
     @Test func sensitiveAccessIsFlaggedAndNotLearned() throws {

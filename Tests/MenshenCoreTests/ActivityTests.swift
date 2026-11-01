@@ -21,7 +21,7 @@ import Testing
         ], environment: env)
         let text = SBPLCompiler(environment: env).compile(config)
         #expect(text.contains("(allow file-read* (subpath \"/System\"))\n"), "system reads: no report")
-        #expect(text.contains("(subpath \"\(testHome)/Music\") (with report))"))
+        #expect(text.contains("(subpath (home \"/Music\")) (with report))"))
         #expect(text.contains("(allow mach-lookup (global-name \"org.example.helper\") (with report))"))
         #expect(text.contains("(allow mach-lookup (global-name-prefix \"com.apple.\") (with report))"))
 

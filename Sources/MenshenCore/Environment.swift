@@ -77,14 +77,26 @@ public struct MenshenEnvironment: Sendable {
         return (temp as NSString).deletingLastPathComponent
     }
 
-    /// `/Users/me/Library/x` → `~/Library/x`. Paths outside home are returned unchanged.
+    /// Stands for the per-user Darwin folder in configs, the way `~` stands for home, so a
+    /// config learned on one Mac or account means the same on another.
+    public static let darwinToken = "$DARWIN"
+
+    /// `/Users/me/Library/x` → `~/Library/x`, `/private/var/folders/xx/yyy/C/x` → `$DARWIN/C/x`.
+    /// Other paths are returned unchanged.
     public func abbreviate(_ path: String) -> String {
+        if let root = userTempRoot {
+            if path == root { return Self.darwinToken }
+            if path.hasPrefix(root + "/") { return Self.darwinToken + path.dropFirst(root.count) }
+        }
         if path == home { return "~" }
         if path.hasPrefix(home + "/") { return "~" + path.dropFirst(home.count) }
         return path
     }
 
     public func expand(_ path: String) -> String {
+        if let root = userTempRoot, path == Self.darwinToken || path.hasPrefix(Self.darwinToken + "/") {
+            return root + path.dropFirst(Self.darwinToken.count)
+        }
         if path == "~" { return home }
         if path.hasPrefix("~/") { return home + path.dropFirst(1) }
         return path

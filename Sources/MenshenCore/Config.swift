@@ -203,13 +203,22 @@ public struct MenshenConfig: Codable, Equatable, Sendable {
     }
 
     /// Carries the user's edits (actions, logging toggles) from `previous` into a regenerated config.
-    public mutating func keepEdits(from previous: MenshenConfig) {
+    /// `normalize` maps a stored path to its current spelling (configs written before `$DARWIN`
+    /// hold the Darwin folder in full), so a rule you switched off stays off when its path is
+    /// re-spelled and its ID changes.
+    public mutating func keepEdits(from previous: MenshenConfig, normalize: (String) -> String = { $0 }) {
         logging = previous.logging
         profiles = previous.profiles
         limits = previous.limits
-        let actions = Dictionary((previous.rules + previous.hardening).map { ($0.id, $0.action) },
-                                 uniquingKeysWith: { first, _ in first })
-        for i in rules.indices { if let a = actions[rules[i].id] { rules[i].action = a } }
+        let old = previous.rules + previous.hardening
+        let actions = Dictionary(old.map { ($0.id, $0.action) }, uniquingKeysWith: { first, _ in first })
+        func shape(_ r: Rule) -> String {
+            "\(r.operations.joined(separator: ","))|\(r.filter.kind.rawValue)|\(r.filter.value.map(normalize) ?? "")"
+        }
+        let byShape = Dictionary(old.map { (shape($0), $0.action) }, uniquingKeysWith: { first, _ in first })
+        for i in rules.indices {
+            if let a = actions[rules[i].id] ?? byShape[shape(rules[i])] { rules[i].action = a }
+        }
         for i in hardening.indices { if let a = actions[hardening[i].id] { hardening[i].action = a } }
     }
 }

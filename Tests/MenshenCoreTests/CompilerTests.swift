@@ -29,7 +29,7 @@ import Testing
         #expect(deny < learned && learned < yours && yours < hardening && hardening < fileLink)
         #expect(text.contains("(allow network-outbound (remote ip \"*:443\") (with report))"))
         #expect(text.contains("(allow process-exec* (literal \"/bin/sh\") (with report))"))
-        #expect(text.contains("(subpath \"\(testHome)/Documents\") (with report))"))
+        #expect(text.contains("(subpath (home \"/Documents\")) (with report))"))
         #expect(text.contains("(allow file-read* (regex #\"\\.(mp4|MP4)$\") (with report))"), "your rules show up as activity")
         #expect(!text.contains("~/"), "home paths are expanded at compile time")
         #expect(text.contains("(allow user-preference-read user-preference-write (preference-domain \"com.example.foo\"))"))
@@ -43,7 +43,7 @@ import Testing
         #expect(!text.contains("; L-") && !text.contains("; H-") && !text.contains("seen="), "IDs and counts stay in the JSON")
         #expect(!text.contains("com.apple.windowserver.active"), "covered by the always-on com.apple. prefix")
         #expect(lines.filter { $0.hasPrefix("(deny file-read* file-write*") }.count == 1, "one statement for all protected locations")
-        #expect(text.contains("(deny file-read* file-write*\n    (subpath \"\(testHome)/.ssh\")\n    (subpath \"\(testHome)/.aws\")"))
+        #expect(text.contains("(deny file-read* file-write*\n    (subpath (home \"/.ssh\"))\n    (subpath (home \"/.aws\"))"))
         #expect(lines.contains("(allow file-read-metadata)"))
         #expect(lines.filter { $0.hasPrefix(";") }.count <= 6, "only a header and section titles")
     }
@@ -179,7 +179,7 @@ import Testing
         let text = SBPLCompiler(environment: env).compile(config)
         let beforeProfiles = text.components(separatedBy: ";; --- profiles").first ?? ""
         #expect(!beforeProfiles.contains("file-write"), "temp-only cancels learned writes")
-        #expect(beforeProfiles.contains("\(testHome)/Movies"), "the read stays")
+        #expect(beforeProfiles.contains("(home \"/Movies"), "the read stays")
         #expect(!beforeProfiles.contains("process-exec*"), "no-launch re-allows the app itself after its deny")
         #expect(!beforeProfiles.contains("*:443"), "offline cancels IP rules")
         #expect(beforeProfiles.contains("/private/var/run/syslog"), "local sockets stay")
@@ -198,9 +198,24 @@ import Testing
         #expect(section.contains("/dev/autofs_nowait") == learnedDev, "a learned device write is kept")
     }
 
+    /// Configs name the Darwin folder as $DARWIN, so one learned on another Mac or account
+    /// compiles to this one's folder.
+    @Test func configsMoveBetweenMacs() {
+        let config = Learn.build(target: fooTarget, events: [allow("file-write-data", "/private/var/folders/aa/bb/C/com.example.foo/x")],
+                                 environment: env)
+        #expect(config.rules.contains { $0.filter.value == "$DARWIN/C/com.example.foo" })
+        #expect(!config.rules.contains { ($0.filter.value ?? "").contains("/private/var/folders/") })
+        let other = MenshenEnvironment(home: "/Users/someone", dataRoot: URL(fileURLWithPath: "/tmp/menshen-other"),
+                                       logsRoot: URL(fileURLWithPath: "/tmp/menshen-other/logs"), userTempRoot: "/private/var/folders/cc/dd")
+        let text = SBPLCompiler(environment: other).compile(config)
+        #expect(text.contains("(define darwin-dir \"/private/var/folders/cc/dd\")"))
+        #expect(text.contains("(subpath (darwin \"/C/com.example.foo\"))"))
+        #expect(!text.contains("aa/bb") && !text.contains("$DARWIN"))
+    }
+
     @Test func hardeningCoversAgentTokens() {
         let text = SBPLCompiler(environment: env).compile(sampleConfig())
-        #expect(text.contains("(subpath \"\(testHome)/.claude\")") && text.contains("(subpath \"\(testHome)/.codex\")"))
+        #expect(text.contains("(subpath (home \"/.claude\"))") && text.contains("(subpath (home \"/.codex\"))"))
     }
 }
 

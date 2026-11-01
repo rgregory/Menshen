@@ -224,7 +224,9 @@ public struct Generalizer {
         }
         for (group, members) in groups {
             let depth = environment.expand(group.folder).split(separator: "/").count
-            guard group.folder != "~", depth >= 2, !group.folder.hasPrefix("/dev") else { continue }
+            // Never the whole home or Darwin folder, nor every app's caches.
+            let shared = ["~", MenshenEnvironment.darwinToken] + ["C", "0", "T"].map { MenshenEnvironment.darwinToken + "/" + $0 }
+            guard !shared.contains(group.folder), depth >= 2, !group.folder.hasPrefix("/dev") else { continue }
             let yours = group.operations == ["file-read*"] && isYourFiles(group.folder)
             guard members.count >= (yours ? Self.yourFilesReadThreshold : Self.collapseThreshold) else { continue }
             var accum = Accum()

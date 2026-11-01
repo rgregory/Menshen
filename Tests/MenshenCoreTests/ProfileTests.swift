@@ -132,7 +132,7 @@ extension KernelTests {
             var config = Learn.build(target: fooTarget, events: [], environment: env)
             config.hardening.removeAll { $0.id == "H-npmrc" || $0.id == "H-env-files" }
             let text = SBPLCompiler(environment: env).compile(config)
-            #expect(text.contains("(subpath \"\(testHome)/.npmrc\")"))
+            #expect(text.contains("(subpath (home \"/.npmrc\"))"))
             #expect(text.contains(#"(regex #"/\.env(\.[^/]*)?$")"#))
         }
     }

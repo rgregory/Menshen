@@ -338,10 +338,10 @@ struct ActivityTile: View {
             ForEach(entries) { e in
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(e.label).font(.caption).lineLimit(1).truncationMode(.middle)
-                        .help(e.detail.hasPrefix("/") ? e.detail : e.label)
+                        .help(e.detail.hasPrefix("/") || e.detail.hasPrefix("$") ? e.detail : e.label)
                     Spacer(minLength: 6)
                     // Paths are in the tooltip; only short details (read, blocked, connect) show.
-                    if !e.detail.isEmpty && !e.detail.hasPrefix("/") {
+                    if !e.detail.isEmpty && !e.detail.hasPrefix("/") && !e.detail.hasPrefix("$") {
                         Text(e.detail).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                     }
                     Text("\(e.count)").font(.caption.monospacedDigit().bold()).foregroundStyle(tint)

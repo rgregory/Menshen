@@ -12,6 +12,9 @@ All notable changes are documented here.
 - The app's own launch is listed once (in the no-launch section) when No other programs is on.
 - Risky Apple services are denied for every app (ADR-010): privileged helper installs, admin authorization, package installs, login/background items, screen recording. Set one to allow for an app that needs it.
 - New protections, added to existing configs automatically: `~/.claude`, `~/.codex`, the Claude desktop app's data, `~/Library/Accounts`, the TCC database folder, Bitwarden.
+- Configs are portable between Macs and accounts: the per-user Darwin folder (`/private/var/folders/xx/yyy`) is stored as `$DARWIN`, the way home is `~`. Existing configs move over on Rebuild or the next learn, keeping rules you switched off.
+- Compiled profiles name this Mac's folders once at the top (`(define home-dir …)`, `(define darwin-dir …)`) and write rules as `(home "/…")` and `(darwin "/…")`.
+- Learning never collapses rules to the whole Darwin folder or every app's caches (`$DARWIN/C`, `/0`, `/T`).
 - Overview: one row per app with evenly spaced counts; the allowance switches moved to the Dashboard only. Sandbox Rules regenerates the profile from disk on every click.
 
 ### Removed: Restricted Sandbox

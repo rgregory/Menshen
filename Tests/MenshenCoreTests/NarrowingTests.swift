@@ -132,9 +132,9 @@ extension KernelTests {
             config.profiles = [.tempOnly]
             let profile = SBPLCompiler(environment: env).compile(config)
             let section = try #require(profile.components(separatedBy: ";; --- profiles").last)
-            #expect(section.contains("(subpath \"/private/var/folders/aa/bb/T\")"))
-            #expect(section.contains("(subpath \"/private/var/folders/aa/bb/C/com.example.foo\")"))
-            #expect(!section.contains("(subpath \"/private/var/folders/aa/bb\")"))
+            #expect(section.contains("(subpath (darwin \"/T\"))"))
+            #expect(section.contains("(subpath (darwin \"/C/com.example.foo\"))"))
+            #expect(!section.contains("(subpath darwin-dir)"))
         }
 
         @Test func rebuildRegeneratesFromCapturesAndKeepsYourChoices() throws {
@@ -159,20 +159,26 @@ extension KernelTests {
             old.logging.activity = false
             let https = try #require(old.rules.firstIndex { $0.operations == ["network-outbound"] })
             old.rules[https].action = .deny
+            // Configs from before $DARWIN spelled the Darwin folder out; a rule switched off there stays off.
+            let own = try #require(old.rules.firstIndex { $0.filter.value == "$DARWIN/C/com.example.foo" })
+            old.rules[own].filter.value = "/private/var/folders/aa/bb/C/com.example.foo"
+            old.rules[own].action = .deny
             let url = env.configURL("com.example.foo")
             try old.write(to: url)
 
             let (config, backup) = try Learn.rebuild(configURL: url, environment: env)
             #expect(backup != nil)
             #expect(try MenshenConfig.load(url).rules == config.rules, "saved")
-            #expect(!config.rules.contains { $0.filter.value == "/private/var/folders/aa/bb" })
-            #expect(!config.anchors.contains("/private/var/folders/aa/bb"))
+            #expect(!config.rules.contains { ["/private/var/folders/aa/bb", "$DARWIN"].contains($0.filter.value) })
+            #expect(!config.anchors.contains("/private/var/folders/aa/bb") && !config.anchors.contains("$DARWIN"))
             #expect(config.rules.contains { $0.operations == ["mach-register"] && $0.filter == Filter(.localName, "com.apple.axserver") })
             #expect(!config.rules.contains { $0.operations == ["mach-register"] && $0.filter == .any })
             #expect(config.rules.contains { $0.source == .custom && $0.filter == Filter(.fileTypes, "mp4") }, "your rules")
             #expect(config.profiles == [.offline])
             #expect(config.logging.activity == false)
             #expect(config.rules.first { $0.operations == ["network-outbound"] }?.action == .deny, "rules you switched off")
+            #expect(config.rules.first { $0.filter.value == "$DARWIN/C/com.example.foo" }?.action == .deny,
+                    "a switched-off rule survives the move to $DARWIN")
         }
 
         @Test func rebuildRefusesWhenACaptureIsMissing() throws {
