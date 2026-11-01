@@ -20,6 +20,7 @@ struct OverviewView: View {
                 }
             }
             .padding()
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
@@ -63,9 +64,11 @@ struct OverviewRow: View {
                 }
             } else {
                 Text("Not run under enforce yet").font(.callout).foregroundStyle(.secondary)
+                Spacer(minLength: 0)
             }
         }
         .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
     }
 
