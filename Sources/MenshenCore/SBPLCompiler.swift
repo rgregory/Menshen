@@ -33,7 +33,10 @@ public struct SBPLCompiler {
         ]
         let own = t.path == t.executable ? "(literal \(quote(t.executable)))" : "(subpath \(quote(t.path)))"
         out.append("(allow file-read* file-map-executable \(own))")
-        out.append("(allow process-exec* \(own)\(config.logging.exec ? " (with report)" : ""))")
+        let profiles = Set(config.profiles ?? [])
+        if !profiles.contains(.noLaunch) {  // otherwise the no-launch section allows it, after its deny
+            out.append("(allow process-exec* \(own)\(config.logging.exec ? " (with report)" : ""))")
+        }
         out.append("(allow signal (target same-sandbox))")
         if config.limits?.memoryMB != nil {
             // The memory limit is applied by taskpolicy inside the sandbox, right before the app.
@@ -48,8 +51,8 @@ public struct SBPLCompiler {
         out.append(statement("allow", ["user-preference-read"], ["(preference-domain-prefix \"com.apple.\")",
                    "(preference-domain \"kCFPreferencesAnyApplication\")", "(preference-domain \"pbs\")"], report: false))
 
-        let learned = config.rules.filter { $0.source != .custom && !coveredByAlwaysOn($0, config) }
-        let yours = config.rules.filter { $0.source == .custom }
+        let learned = withoutShadowed(config.rules.filter { $0.source != .custom && !coveredByAlwaysOn($0, config) }, config)
+        let yours = withoutShadowed(config.rules.filter { $0.source == .custom }, config)
         for (title, rules) in [(";; --- learned", learned),
                                (";; --- your rules (before hardening, so protected locations stay blocked)", yours)] where !rules.isEmpty {
             out.append("")
@@ -85,7 +88,7 @@ public struct SBPLCompiler {
             if let temp = environment.userTempDir { places.append(temp) }
             places += config.anchors.map(environment.expand)
                 .filter { anchor in environment.userAppAreas.contains { anchor.hasPrefix($0 + "/") } }
-            out.append(statement("allow", ["file-write*"], places.map { "(subpath \(quote($0)))" } + ["(subpath \"/dev\")"], report: false))
+            out.append(statement("allow", ["file-write*"], places.map { "(subpath \(quote($0)))" } + devWrites(config), report: false))
         }
         if profiles.contains(.noLaunch) {
             out.append("(deny process-exec* (subpath \"/\"))")
@@ -97,6 +100,46 @@ public struct SBPLCompiler {
             out.append("(deny lsopen)")
         }
         return out
+    }
+
+    /// Device files a temp-only app may still write: the usual sinks, its terminal, and any
+    /// other device learning saw it write. Not all of /dev.
+    func devWrites(_ config: MenshenConfig) -> [String] {
+        var out = Self.devSinks.map { "(literal \(quote($0)))" } + ["(subpath \"/dev/fd\")", "(regex #\"^/dev/ttys[0-9]+$\")"]
+        for rule in config.rules where rule.action == .allow && rule.operations.contains(where: { $0.hasPrefix("file-write") }) {
+            guard rule.filter.kind == .literal || rule.filter.kind == .subpath, let raw = rule.filter.value else { continue }
+            let path = environment.expand(raw)
+            guard path.hasPrefix("/dev/"), !Self.devSinks.contains(path), !path.isWithin("/dev/fd"),
+                  let text = filterText(rule.filter), !out.contains(text) else { continue }
+            out.append(text)
+        }
+        return out
+    }
+
+    static let devSinks = ["/dev/null", "/dev/zero", "/dev/random", "/dev/urandom", "/dev/tty", "/dev/dtracehelper"]
+
+    /// Leaves out the parts of learned and your allows that a profile's blanket deny cancels
+    /// anyway, so the compiled file shows only what is really allowed. The kernel enforces the
+    /// same thing either way; the JSON keeps every rule.
+    /// - Temp-only: every write (the profile re-allows temp, the app's caches and devices).
+    /// - No other programs: every launch (the profile re-allows the app itself).
+    /// - Offline: IP network rules (local sockets are untouched).
+    func withoutShadowed(_ rules: [Rule], _ config: MenshenConfig) -> [Rule] {
+        let profiles = Set(config.profiles ?? [])
+        guard !profiles.subtracting([.background]).isEmpty else { return rules }
+        return rules.compactMap { rule in
+            guard rule.action == .allow else { return rule }
+            var ops = rule.operations
+            if profiles.contains(.tempOnly) { ops.removeAll { $0.hasPrefix("file-write") } }
+            if profiles.contains(.noLaunch) { ops.removeAll { $0 == "process-exec*" } }
+            if profiles.contains(.offline), rule.filter.kind == .remote || rule.filter.kind == .local {
+                ops.removeAll { $0.hasPrefix("network") }
+            }
+            if ops.isEmpty { return nil }
+            var copy = rule
+            copy.operations = ops
+            return copy
+        }
     }
 
     /// Every profile gets every current protection: ones added to Menshen after a config was

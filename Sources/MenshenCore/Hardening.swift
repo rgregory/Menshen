@@ -93,6 +93,14 @@ public struct Hardening: Sendable {
         Entry(id: "H-contacts", title: "Contacts", path: "~/Library/Application Support/AddressBook", protection: .readWrite),
         Entry(id: "H-calendars", title: "Calendars", path: "~/Library/Calendars", protection: .readWrite),
         Entry(id: "H-photos", title: "Photos library", path: "~/Pictures/Photos Library.photoslibrary", protection: .readWrite),
+        // AI agents: tokens, sessions and their tool configs.
+        Entry(id: "H-claude", title: "Claude Code credentials and sessions", path: "~/.claude", protection: .readWrite),
+        Entry(id: "H-claude-desktop", title: "Claude desktop app data", path: "~/Library/Application Support/Claude", protection: .readWrite),
+        Entry(id: "H-codex", title: "Codex CLI credentials and sessions", path: "~/.codex", protection: .readWrite),
+        // More account and password stores.
+        Entry(id: "H-accounts", title: "macOS internet accounts", path: "~/Library/Accounts", protection: .readWrite),
+        Entry(id: "H-tcc", title: "Privacy permissions database (TCC)", path: "~/Library/Application Support/com.apple.TCC", protection: .readWrite),
+        Entry(id: "H-bitwarden", title: "Bitwarden data", path: "~/Library/Application Support/Bitwarden", protection: .readWrite),
     ]
 
     public static let appleEventsID = "H-apple-events"

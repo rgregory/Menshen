@@ -6,6 +6,13 @@ All notable changes are documented here.
 
 ## [Unreleased] — 0.2.0
 
+### Changed: tighter compiled profiles
+- Profiles leave out the learned and your allows they cancel anyway: every write under temp-only, every launch under No other programs, IP network rules under Offline. The kernel enforces the same thing; the compiled file now shows only what is really allowed. The JSON keeps every rule.
+- Temp-only no longer allows writing anywhere in `/dev`: only `/dev/null`, `zero`, `random`, `urandom`, `tty`, `dtracehelper`, `/dev/fd`, the terminal (`/dev/ttysN`) and devices learning saw the app write.
+- The app's own launch is listed once (in the no-launch section) when No other programs is on.
+- New protections, added to existing configs automatically: `~/.claude`, `~/.codex`, the Claude desktop app's data, `~/Library/Accounts`, the TCC database folder, Bitwarden.
+- Overview: one row per app with evenly spaced counts; the allowance switches moved to the Dashboard only. Sandbox Rules regenerates the profile from disk on every click.
+
 ### Removed: Restricted Sandbox
 - Dropping an app on Menshen's Dock icon or the sidebar drop zone, **Run Restricted**, the Restricted Sandbox settings sheet and `menshen box` are gone, with `RestrictedSandbox`, `restrictedProfile` and `Enforce.runRestricted`. Apps are confined by learning, then enforcing. ADR-006 is withdrawn; a saved `restricted-sandbox.json` is no longer read and can be deleted.
 - Menshen.app no longer registers as a viewer for apps (`CFBundleDocumentTypes`), and MenshenCore is no longer a library product.
