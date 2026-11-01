@@ -15,6 +15,10 @@ swift build -c release --product menshen-launch
 swift build -c release --product menshen
 BIN=$(swift build -c release --show-bin-path)
 VERSION=$(sed -n 's/^public let menshenVersion = "\(.*\)"/\1/p' Sources/MenshenCore/Config.swift)
+# Build number and commit for About: commits on this branch, and the short hash (+ if dirty).
+BUILD=$(git rev-list --count HEAD 2>/dev/null || echo 0)
+COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo unknown)
+git diff --quiet HEAD 2>/dev/null || COMMIT="$COMMIT+"
 
 APP=build/Menshen.app
 rm -rf "$APP"
@@ -44,7 +48,8 @@ cat > "$APP/Contents/Info.plist" <<EOF
     <key>CFBundleName</key><string>Menshen</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>$VERSION</string>
-    <key>CFBundleVersion</key><string>$VERSION</string>
+    <key>CFBundleVersion</key><string>$BUILD</string>
+    <key>NSHumanReadableCopyright</key><string>門神 · commit $COMMIT · Apache-2.0</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSPrincipalClass</key><string>NSApplication</string>
@@ -58,4 +63,4 @@ codesign -s - --force "$APP"
 codesign --verify --strict "$APP"
 # Re-register so Finder and the Dock don't keep a stale (generic) icon for the rebuilt bundle.
 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister -f "$APP"
-echo "built $APP ($VERSION)"
+echo "built $APP ($VERSION, build $BUILD, $COMMIT)"
