@@ -163,6 +163,45 @@ import Testing
         #expect(loaded.hardening == config.hardening)
         #expect(loaded.target == config.target)
     }
+
+    /// Rules a profile cancels anyway are left out of the compiled file; the JSON keeps them.
+    @Test func profilesDropShadowedAllows() {
+        var config = Learn.build(target: fooTarget, events: [
+            allow("file-read-data", "\(testHome)/Movies/a.mov"),
+            allow("file-write-data", "\(testHome)/Movies/a.mov"),
+            allow("file-write-data", "/dev/ttys004"),
+            allow("file-write-data", "/dev/autofs_nowait"),
+            allow("network-outbound", "remote:*:443"),
+            allow("network-outbound", "/private/var/run/syslog"),
+            allow("process-exec*", "/bin/sh"),
+        ], environment: env)
+        config.profiles = [.offline, .noLaunch, .tempOnly]
+        let text = SBPLCompiler(environment: env).compile(config)
+        let beforeProfiles = text.components(separatedBy: ";; --- profiles").first ?? ""
+        #expect(!beforeProfiles.contains("file-write"), "temp-only cancels learned writes")
+        #expect(beforeProfiles.contains("\(testHome)/Movies"), "the read stays")
+        #expect(!beforeProfiles.contains("process-exec*"), "no-launch re-allows the app itself after its deny")
+        #expect(!beforeProfiles.contains("*:443"), "offline cancels IP rules")
+        #expect(beforeProfiles.contains("/private/var/run/syslog"), "local sockets stay")
+        #expect(text.components(separatedBy: "(allow process-exec* (subpath \"/Applications/Foo.app\")").count == 2, "own launch once")
+        #expect(config.rules.contains { $0.operations.contains("file-write*") }, "the JSON keeps them")
+    }
+
+    /// Temp-only allows device sinks, the terminal and devices learning saw, not all of /dev.
+    @Test func tempOnlyNarrowsDev() {
+        var config = Learn.build(target: fooTarget, events: [allow("file-write-data", "/dev/autofs_nowait")], environment: env)
+        config.profiles = [.tempOnly]
+        let section = SBPLCompiler(environment: env).compile(config).components(separatedBy: ";; --- profiles").last ?? ""
+        #expect(!section.contains("(subpath \"/dev\")"))
+        #expect(section.contains("(literal \"/dev/null\")") && section.contains("(regex #\"^/dev/ttys[0-9]+$\")"))
+        let learnedDev = config.rules.contains { $0.action == .allow && $0.filter.value == "/dev/autofs_nowait" }
+        #expect(section.contains("/dev/autofs_nowait") == learnedDev, "a learned device write is kept")
+    }
+
+    @Test func hardeningCoversAgentTokens() {
+        let text = SBPLCompiler(environment: env).compile(sampleConfig())
+        #expect(text.contains("(subpath \"\(testHome)/.claude\")") && text.contains("(subpath \"\(testHome)/.codex\")"))
+    }
 }
 
 /// The compiled layout relies on "later matching rule wins". Prove it against the real kernel.
@@ -271,44 +310,5 @@ import Testing
         #expect(rule.label == "media")
         #expect(RuleText.describe(rule) == "Read all media files (video & audio)")
         #expect(rule.filter.value?.split(separator: ",").contains("mkv") == FileCategory.media.extensions.contains("mkv"))
-    }
-
-    /// Rules a profile cancels anyway are left out of the compiled file; the JSON keeps them.
-    @Test func profilesDropShadowedAllows() {
-        var config = Learn.build(target: fooTarget, events: [
-            allow("file-read-data", "\(testHome)/Movies/a.mov"),
-            allow("file-write-data", "\(testHome)/Movies/a.mov"),
-            allow("file-write-data", "/dev/ttys004"),
-            allow("file-write-data", "/dev/autofs_nowait"),
-            allow("network-outbound", "remote:*:443"),
-            allow("network-outbound", "/private/var/run/syslog"),
-            allow("process-exec*", "/bin/sh"),
-        ], environment: env)
-        config.profiles = [.offline, .noLaunch, .tempOnly]
-        let text = SBPLCompiler(environment: env).compile(config)
-        let beforeProfiles = text.components(separatedBy: ";; --- profiles").first ?? ""
-        #expect(!beforeProfiles.contains("file-write"), "temp-only cancels learned writes")
-        #expect(beforeProfiles.contains("\(testHome)/Movies"), "the read stays")
-        #expect(!beforeProfiles.contains("process-exec*"), "no-launch re-allows the app itself after its deny")
-        #expect(!beforeProfiles.contains("*:443"), "offline cancels IP rules")
-        #expect(beforeProfiles.contains("/private/var/run/syslog"), "local sockets stay")
-        #expect(text.components(separatedBy: "(allow process-exec* (subpath \"/Applications/Foo.app\")").count == 2, "own launch once")
-        #expect(config.rules.contains { $0.operations.contains("file-write*") }, "the JSON keeps them")
-    }
-
-    /// Temp-only allows device sinks, the terminal and devices learning saw, not all of /dev.
-    @Test func tempOnlyNarrowsDev() {
-        var config = Learn.build(target: fooTarget, events: [allow("file-write-data", "/dev/autofs_nowait")], environment: env)
-        config.profiles = [.tempOnly]
-        let section = SBPLCompiler(environment: env).compile(config).components(separatedBy: ";; --- profiles").last ?? ""
-        #expect(!section.contains("(subpath \"/dev\")"))
-        #expect(section.contains("(literal \"/dev/null\")") && section.contains("(regex #\"^/dev/ttys[0-9]+$\")"))
-        let learnedDev = config.rules.contains { $0.action == .allow && $0.filter.value == "/dev/autofs_nowait" }
-        #expect(section.contains("/dev/autofs_nowait") == learnedDev, "a learned device write is kept")
-    }
-
-    @Test func hardeningCoversAgentTokens() {
-        let text = SBPLCompiler(environment: env).compile(sampleConfig())
-        #expect(text.contains("(subpath \"\(testHome)/.claude\")") && text.contains("(subpath \"\(testHome)/.codex\")"))
     }
 }
