@@ -30,7 +30,7 @@ It's simple and robust: VLC went from 10 distinct denials to 0. The filters were
 
 ## Consequences
 
-- A compromised app can reach any Apple mach service. Apple Events (`appleevent-send`) and `osascript` are separate checks that hardening still denies, and privacy-gated services still require the user's privacy consent.
+- A compromised app can reach any Apple mach service except the risky ones hardening denies (ADR-010). Apple Events (`appleevent-send`) and `osascript` are separate checks that hardening still denies, and privacy-gated services still require the user's privacy consent.
 - It can read Apple and global preference domains, but not other vendors' preferences.
 - Not configurable per app. Adding a config toggle later is a small change.
 

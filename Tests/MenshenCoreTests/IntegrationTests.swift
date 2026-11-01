@@ -58,6 +58,23 @@ extension KernelTests {
             #expect(try run(profile, ["mach", "org.example.not-apple"]) != 0, "non-Apple services are not covered")
         }
 
+        /// Risky Apple services are denied for every app, though `com.apple.*` is allowed. The
+        /// control (the same profile with that protection switched to allow) reaches each one, so
+        /// the name is real on this Mac and the deny is what blocks it.
+        @Test func riskyAppleServicesAreDenied() throws {
+            let target = try ResolvedTarget.resolve(probe)
+            let config = Learn.build(target: target, events: [], environment: .current())
+            let compiler = SBPLCompiler(environment: .current())
+            let profile = compiler.compile(config)
+            for service in Hardening.services {
+                var open = config
+                let i = try #require(open.hardening.firstIndex { $0.id == service.id })
+                open.hardening[i].action = .allow
+                #expect(try run(compiler.compile(open), ["mach", service.name]) == 0, "\(service.name) exists and is reachable")
+                #expect(try run(profile, ["mach", service.name]) != 0, "\(service.name) is denied")
+            }
+        }
+
         /// The assertions above must be able to fail: without the two lines, the same calls are blocked.
         @Test func controlProfileBlocksThem() throws {
             #expect(try run(control, ["pref", "-"]) != 0)

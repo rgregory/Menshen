@@ -9,6 +9,7 @@ See `docs/memory/decisions/_TEMPLATE.md` for the ADR format.
 | 2026-10-29 | [0002](memory/decisions/0002-swift-no-dependencies.md) | Swift with no third-party dependencies |
 | 2026-10-29 | [0003](memory/decisions/0003-config-model-and-hardening.md) | JSON config; learned rules, then hardening rules (last match wins); flag-and-deny |
 | 2026-10-29 | [0004](memory/decisions/0004-allow-apple-services-and-preferences.md) | Always allow `com.apple.*` mach services and Apple/global preference reads (learning can't see them) |
+| 2026-11-01 | [0010](memory/decisions/0010-deny-risky-apple-services.md) | Hardening denies risky Apple services for every app (privileged helpers, authorization, installers, background items, screen recording); clipboard and keychain stay allowed |
 | 2026-10-31 | [0006](memory/decisions/0006-restricted-sandbox.md) | ~~Restricted Sandbox~~ (withdrawn: feature removed) |
 | 2026-10-31 | [0007](memory/decisions/0007-learned-rules-stay-narrow.md) | Learned rules keep the names the kernel reported; the app owns the shared temp and its own Darwin cache folders, not every app's |
 | 2026-10-31 | [0008](memory/decisions/0008-no-other-programs-blocks-lsopen.md) | No other programs also denies `lsopen` (filter-less): apps, documents and links opened through LaunchServices run outside the sandbox |

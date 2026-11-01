@@ -103,6 +103,28 @@ public struct Hardening: Sendable {
         Entry(id: "H-bitwarden", title: "Bitwarden data", path: "~/Library/Application Support/Bitwarden", protection: .readWrite),
     ]
 
+    /// Apple services an ordinary app doesn't need and that give a compromised one leverage:
+    /// installing privileged helpers or packages, admin-password prompts, background items that
+    /// survive the app, and screen recording. Denied by name after the always-on
+    /// `com.apple.` allow (ADR-004), so the later, narrower rule wins. Learning can't see service
+    /// lookups, so these are never FLAGGED; a blocked one shows in the enforce log, and setting
+    /// the rule to allow re-enables it for that app. The clipboard and the keychain are left
+    /// alone: too many normal apps need them.
+    public struct Service: Sendable {
+        public var id: String
+        public var title: String
+        public var name: String
+    }
+
+    public static let services: [Service] = [
+        Service(id: "H-svc-smd", title: "Installing privileged helpers (SMJobBless)", name: "com.apple.xpc.smd"),
+        Service(id: "H-svc-authd", title: "Admin authorization prompts and rights", name: "com.apple.authd"),
+        Service(id: "H-svc-installd", title: "Installing packages", name: "com.apple.installd"),
+        Service(id: "H-svc-btm", title: "Registering login and background items (persistence)",
+                name: "com.apple.backgroundtaskmanagementagent"),
+        Service(id: "H-svc-replayd", title: "Screen recording (ReplayKit / ScreenCaptureKit)", name: "com.apple.replayd"),
+    ]
+
     public static let appleEventsID = "H-apple-events"
     public static let osascriptID = "H-osascript"
     public static let osascriptPath = "/usr/bin/osascript"
@@ -152,6 +174,11 @@ public struct Hardening: Sendable {
                 rules.append(Rule(id: "H-own-\(hash)", action: .allow, operations: operations, filter: ownFilter,
                                   source: .hardening, note: "The app's own data inside \(entry.path)."))
             }
+        }
+        for service in Self.services {
+            rules.append(Rule(id: service.id, action: .deny, operations: ["mach-lookup"],
+                              filter: Filter(.globalName, service.name), source: .hardening,
+                              note: "\(service.title). Apple service \(service.name), denied for every app; set to allow if this app needs it."))
         }
         rules.append(Rule(id: Self.appleEventsID, action: .deny, operations: ["appleevent-send"], filter: .any,
                           source: .hardening, seen: hits[Self.appleEventsID]?.count ?? 0,
