@@ -1,6 +1,6 @@
 # Menshen
 
-Menshen (門神, the door gods painted on Chinese gates) confines a macOS app with **Seatbelt**, the sandbox engine underneath Apple's App Sandbox, without changing the app.
+Menshen (門神) confines a macOS app with **Seatbelt**, the sandbox engine underneath Apple's App Sandbox.
 
 1. **`menshen learn`** runs the app with everything allowed and every operation reported. From that it writes a config: the learned baseline, plus hardening that denies credential stores, other apps' data and persistence locations, *even if the app touched them while learning* (those rules are **FLAGGED**).
 2. **`menshen enforce`** runs the app under a deny-by-default profile compiled from that config. Every denial is logged as JSONL, along with the risky things it was allowed to do: outbound network, process launches, and writes outside the app's own folders.

@@ -150,6 +150,8 @@ struct Metric: View {
             Text("\(value)").font(.title3.monospacedDigit().bold()).foregroundStyle(color)
             Text(label).font(.caption).foregroundStyle(.secondary)
         }
+        .lineLimit(1)
+        .fixedSize()
     }
 }
 

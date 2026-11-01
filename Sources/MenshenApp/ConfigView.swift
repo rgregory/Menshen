@@ -25,7 +25,9 @@ struct ConfigView: View {
                 .frame(width: 200)
                 TextField("Search rules", text: Bindable(store).ruleSearch)
                 Button("Add Permission…") { store.permissionAppliesNow = false; store.addingPermission = true }
-                Button("Show Sandbox Rules") { store.showSandboxRules(key) }
+                Button("Sandbox Rules") { store.showSandboxRules(key) }
+                    .fixedSize()
+                    .help("Regenerate the full sandbox profile from the current config and show it")
                 Button("Revert") { store.revert(key) }.disabled(!dirty)
                 Button("Save") { store.save(key) }.disabled(!dirty).keyboardShortcut("s")
             }

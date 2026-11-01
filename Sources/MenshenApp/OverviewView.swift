@@ -2,8 +2,8 @@ import AppKit
 import MenshenCore
 import SwiftUI
 
-/// Every learned app on one screen: its newest run (live while running) and quick switches
-/// for the big allowances. A switch on means allowed; off applies the matching profile.
+/// Every learned app on one screen with its newest run (live while running). Allowances are
+/// changed on each app's Dashboard.
 struct OverviewView: View {
     let store: AppStore
 
@@ -33,44 +33,47 @@ struct OverviewRow: View {
         let session = store.sessions[item.id]
         let live = session?.running == true && session?.kind == .enforce
         let activity = live ? ActivitySummary.make(session!.records) : store.overview[item.id]?.activity
-        let profiles = Set(entry.config.profiles ?? [])
-        HStack(alignment: .center, spacing: 18) {
+        HStack(alignment: .center, spacing: 16) {
             Button { store.open(item) } label: {
                 HStack(spacing: 10) {
-                    Image(nsImage: NSWorkspace.shared.icon(forFile: item.appPath)).resizable().frame(width: 36, height: 36)
-                    VStack(alignment: .leading, spacing: 2) {
+                    Image(nsImage: NSWorkspace.shared.icon(forFile: item.appPath)).resizable().frame(width: 32, height: 32)
+                    VStack(alignment: .leading, spacing: 1) {
                         Text(item.name).font(.headline)
                         Text(status(live: live)).font(.caption).foregroundStyle(live ? .green : .secondary)
                     }
+                    .lineLimit(1)
                 }
-                .frame(width: 210, alignment: .leading)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .help("Open \(item.name)'s Dashboard")
+            .frame(width: 220, alignment: .leading)
 
+            Divider().frame(height: 36)
+
+            // What its newest run did: one evenly spaced line, fewer counts when narrow.
             if let a = activity {
-                Metric(value: a.total, label: "events")
-                Metric(value: a.blocked, label: "blocked", color: a.blocked > 0 ? .red : .primary)
-                Metric(value: a.counts["network", default: 0], label: "network")
-                Metric(value: a.counts["read", default: 0] + a.counts["write", default: 0]
-                       + a.counts["write-outside", default: 0], label: "disk")
-                Metric(value: a.counts["exec", default: 0], label: "launches")
-                Metric(value: a.counts["service", default: 0], label: "services")
+                let disk = a.counts["read", default: 0] + a.counts["write", default: 0] + a.counts["write-outside", default: 0]
+                let all: [(Int, String)] = [(a.total, "events"), (a.counts["network", default: 0], "network"), (disk, "disk"),
+                                            (a.counts["exec", default: 0], "launches"), (a.counts["service", default: 0], "services")]
+                ViewThatFits(in: .horizontal) {
+                    stats(blocked: a.blocked, all)
+                    stats(blocked: a.blocked, Array(all.prefix(3)))
+                    stats(blocked: a.blocked, [])
+                }
             } else {
-                Text("Not run under enforce yet").foregroundStyle(.secondary)
+                Text("Not run under enforce yet").font(.callout).foregroundStyle(.secondary)
             }
-            Spacer(minLength: 12)
-            Divider().frame(height: 40)
-            VStack(alignment: .trailing, spacing: 4) {
-                allowance("Network", blockedBy: .offline, profiles)
-                allowance("Write files", blockedBy: .tempOnly, profiles)
-                allowance("Other programs", blockedBy: .noLaunch, profiles)
-            }
-            .frame(width: 170)
         }
-        .padding(12)
+        .padding(14)
         .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    func stats(blocked: Int, _ items: [(Int, String)]) -> some View {
+        HStack(spacing: 0) {
+            Stat(value: blocked, label: "blocked", alert: blocked > 0)
+            ForEach(items, id: \.1) { Stat(value: $0.0, label: $0.1) }
+        }
     }
 
     func status(live: Bool) -> String {
@@ -82,16 +85,22 @@ struct OverviewRow: View {
         }
         return parts.isEmpty ? "Learned" : parts.joined(separator: " · ")
     }
+}
 
-    /// On = allowed (the profile that blocks it is off). Saved at once, used from the next run.
-    func allowance(_ title: String, blockedBy profile: Profile, _ profiles: Set<Profile>) -> some View {
-        HStack(spacing: 8) {
-            Text(title).font(.callout)
-            Spacer(minLength: 0)
-            Toggle(title, isOn: Binding(get: { !profiles.contains(profile) },
-                                        set: { store.applyProfile(entry.id, profile, on: !$0) }))
-                .toggleStyle(.switch).controlSize(.mini).labelsHidden()
+/// One count in the Overview's stat line; columns share the width evenly.
+struct Stat: View {
+    let value: Int
+    let label: String
+    var alert = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(value.formatted()).font(.title3.monospacedDigit().weight(.semibold))
+                .foregroundStyle(alert ? Color.red : Color.primary)
+            Text(label).font(.caption).foregroundStyle(alert ? Color.red : Color.secondary)
         }
-        .help(profile.explanation)
+        .lineLimit(1)
+        .fixedSize()
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

@@ -524,8 +524,17 @@ final class AppStore {
         if panel.runModal() == .OK, let url = panel.url { newValue = url.path }
     }
 
+    /// Regenerates the whole profile on every click: re-reads the config from disk (picking up
+    /// Dashboard toggles, CLI edits and rebuilds), re-detects the environment, and compiles from
+    /// scratch with the current protections. Unsaved Config edits are kept and included.
     func showSandboxRules(_ key: String) {
+        let before = entries.first { $0.id == key }?.config
+        refresh()
+        guard let entry = entries.first(where: { $0.id == key }) else { return }
+        if drafts[key] == nil || drafts[key] == before { drafts[key] = entry.config }
         guard let draft = drafts[key] else { return }
-        sbplText = SBPLCompiler(environment: environment).compile(draft)
+        let source = (isDirty(key) ? "\(entry.configURL.path) with unsaved edits" : entry.configURL.path)
+            + ", generated \(Date().formatted(date: .omitted, time: .standard))"
+        sbplText = SBPLCompiler(environment: MenshenEnvironment.current()).compile(draft, source: source)
     }
 }
