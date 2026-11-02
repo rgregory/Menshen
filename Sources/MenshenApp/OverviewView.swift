@@ -2,25 +2,59 @@ import AppKit
 import MenshenCore
 import SwiftUI
 
-/// Every learned app on one screen with its newest run (live while running). Allowances are
-/// changed on each app's Dashboard.
+/// One of the sidebar's smart lists, Things-style: big title, a centered column of rows, and
+/// (on the Overview) running apps in their own section. Allowances are changed on each app's
+/// Dashboard.
 struct OverviewView: View {
     let store: AppStore
 
     var body: some View {
-        let learned = store.items.filter { $0.entry != nil }
+        let scope = store.scope
+        let shown = store.items(in: scope)
         ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                if learned.isEmpty {
-                    ContentUnavailableView("No learned apps yet", systemImage: "square.grid.2x2",
-                                           description: Text("Learn an app and it shows up here."))
+            VStack(alignment: .leading, spacing: 8) {
+                ThingsTitle(title: scope.rawValue, subtitle: scope.blurb) {
+                    Image(systemName: scope.icon)
+                        .font(.system(size: 26, weight: .semibold))
+                        .foregroundStyle(scope.tint)
                 }
-                ForEach(learned) { item in
-                    OverviewRow(store: store, item: item, entry: item.entry!)
+                .padding(.bottom, 8)
+
+                if shown.isEmpty {
+                    ContentUnavailableView(scope.emptyTitle, systemImage: scope.icon,
+                                           description: Text(scope.emptyHint))
+                        .padding(.top, 60)
+                } else if scope == .overview {
+                    let live = shown.filter { store.sessions[$0.id]?.running == true }
+                    let rest = shown.filter { store.sessions[$0.id]?.running != true }
+                    if !live.isEmpty {
+                        ThingsSection(title: "Running now", count: live.count)
+                        rows(live)
+                    }
+                    if !rest.isEmpty {
+                        if !live.isEmpty {
+                            ThingsSection(title: "Learned", count: rest.count)
+                        }
+                        rows(rest)
+                    }
+                } else {
+                    rows(shown)
                 }
             }
-            .padding()
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, Things.gutter).padding(.vertical, 24)
+            .frame(maxWidth: Things.column, alignment: .leading)
+            .frame(maxWidth: .infinity)
+        }
+    }
+
+    @ViewBuilder
+    func rows(_ items: [AppItem]) -> some View {
+        ForEach(items) { item in
+            if let entry = item.entry {
+                OverviewRow(store: store, item: item, entry: entry)
+            } else {
+                InboxRow(store: store, item: item)
+            }
         }
     }
 }
@@ -69,7 +103,8 @@ struct OverviewRow: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.primary.opacity(0.07)))
     }
 
     func stats(blocked: Int, _ items: [(Int, String)]) -> some View {

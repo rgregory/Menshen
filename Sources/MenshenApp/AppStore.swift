@@ -68,6 +68,8 @@ final class AppStore {
     var added: [AppItem] = []
     private(set) var selection: String?
     var tab: DetailTab = .overview
+    /// Which smart list the Overview shows (picked in the sidebar).
+    var scope: SidebarScope = .overview
     var message: String?
     /// Unreadable configs already reported, so a refresh doesn't alert about them again.
     @ObservationIgnored private var reportedUnreadable: Set<String> = []
@@ -171,6 +173,12 @@ final class AppStore {
     func open(_ item: AppItem) {
         select(item.id)
         tab = .dashboard
+    }
+
+    /// Shows one of the sidebar's smart lists.
+    func showScope(_ scope: SidebarScope) {
+        self.scope = scope
+        tab = .overview
     }
 
     func select(_ key: String?) {
