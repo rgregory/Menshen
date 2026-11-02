@@ -65,7 +65,8 @@ public struct SBPLCompiler {
         out += profileSection(config, own: own)
         out.append("")
         out.append(";; --- hardening (last, so it wins)")
-        out += statements(config.hardening, logging: config.logging, config: config)
+        out += hardeningStatements(config.hardening, logging: config.logging, config: config)
+        out += selfProtection(config)
         out.append("(deny file-link)")
         out.append("")
         return out.joined(separator: "\n")
@@ -119,6 +120,8 @@ public struct SBPLCompiler {
         return out
     }
 
+    static let matchesNothing = "(literal \"/dev/null/menshen-invalid-rule\")"
+
     static let devSinks = ["/dev/null", "/dev/zero", "/dev/random", "/dev/urandom", "/dev/tty", "/dev/dtracehelper"]
 
     /// Leaves out the parts of learned and your allows that a profile's blanket deny cancels
@@ -155,6 +158,65 @@ public struct SBPLCompiler {
         var copy = config
         copy.hardening += missing
         return copy
+    }
+
+    /// The hardening section in layers, because the order inside it matters (later wins):
+    /// 1. name patterns you switched to allow (e.g. .env files), so a protected folder still
+    ///    blocks them inside it (a .env in ~/.ssh stays blocked);
+    /// 2. denies on protected folders and files;
+    /// 3. folder allows: the app's own data inside a protected folder (`H-own-…`), entries
+    ///    inside the app's own folder, and folders you switched to allow. After the denies so
+    ///    they actually win; sorting every allow first made the own-data re-allows dead;
+    /// 4. denies on secrets matched by name (.env, key files), so no re-allowed folder opens
+    ///    them again.
+    func hardeningStatements(_ rules: [Rule], logging: LoggingSettings, config: MenshenConfig) -> [String] {
+        let pattern = { (r: Rule) in r.filter.kind == .homePattern }
+        let layers = [rules.filter { $0.action == .allow && pattern($0) },
+                      rules.filter { $0.action == .deny && !pattern($0) },
+                      rules.filter { $0.action == .allow && !pattern($0) },
+                      rules.filter { $0.action == .deny && pattern($0) }]
+        return layers.flatMap { statements($0, logging: logging, config: config) }
+    }
+
+    /// Menshen's own state, which no wrapped app may touch: its configs, captures, swap
+    /// registry and logs (read and write), and every launcher bundle and other replaced
+    /// app's hidden original (write). Otherwise a confined app could rewrite its own profile,
+    /// or swap a launcher, and be free on the next launch. Not stored in the config, so it
+    /// can't be switched off or edited away; compiled after hardening, so nothing overrides it.
+    /// A root that contains the home folder or the app itself (a test setup, an odd
+    /// MENSHEN_DATA) is skipped rather than blocking everything.
+    func selfProtection(_ config: MenshenConfig) -> [String] {
+        let target = config.target.path
+        func usable(_ root: String) -> Bool {
+            root != "/" && !environment.home.isWithin(root) && !target.isWithin(root)
+        }
+        let roots = [environment.dataRoot.path, environment.logsRoot.path].map(realPath)
+        var readWrite: [String] = []
+        for root in roots where usable(root) && !readWrite.contains(where: { root.isWithin($0) }) {
+            readWrite.append(root)
+        }
+        var writeOnly: [String] = []
+        for record in Swap.records(environment) {
+            writeOnly.append(record.appPath)
+            if record.hiddenPath != target { writeOnly.append(record.hiddenPath) }
+        }
+        writeOnly = writeOnly.filter { p in usable(p) && !readWrite.contains { p.isWithin($0) } }
+        guard !readWrite.isEmpty || !writeOnly.isEmpty else { return [] }
+        var out = ["", ";; --- Menshen's own files (always, can't be switched off)"]
+        if !readWrite.isEmpty {
+            out.append(statement("deny", ["file-read*", "file-write*"], readWrite.map { "(subpath \(path($0)))" }, report: false))
+        }
+        if !writeOnly.isEmpty {
+            out.append(statement("deny", ["file-write*"], writeOnly.map { "(subpath \(path($0)))" }, report: false))
+        }
+        // Temp-only exports a private TMPDIR inside the data folder; that one folder stays usable.
+        if Set(config.profiles ?? []).contains(.tempOnly) {
+            let temp = realPath(environment.dataRoot.path) + "/temp/" + config.target.key
+            if readWrite.contains(where: { temp.isWithin($0) }) {
+                out.append(statement("allow", ["file-read*", "file-write*"], ["(subpath \(path(temp)))"], report: false))
+            }
+        }
+        return out
     }
 
     /// Merges rules into as few statements as possible without changing what they permit.
@@ -260,8 +322,15 @@ public struct SBPLCompiler {
         case .iokitUserClientClass: return "(iokit-user-client-class \(quote(value)))"
         case .ipcPosixName: return "(ipc-posix-name \(quote(value)))"
         case .sysctlName: return "(sysctl-name \(quote(value)))"
-        case .homePattern: return "(require-all (subpath home-dir) (regex #\"\(raw)\"))"
-        case .fileTypes: return "(regex #\"\\.(\(Self.caseInsensitive(raw)))$\")"
+        // Regex literals can't be escaped like strings, so only checked values get in
+        // (MenshenConfig.load refuses others; this guard covers configs built in code).
+        // An unchecked value compiles to a path that matches nothing, never to no filter.
+        case .homePattern:
+            guard MenshenConfig.isSafePattern(raw) else { return Self.matchesNothing }
+            return "(require-all (subpath home-dir) (regex #\"\(raw)\"))"
+        case .fileTypes:
+            guard MenshenConfig.isFileTypeList(raw) else { return Self.matchesNothing }
+            return "(regex #\"\\.(\(Self.caseInsensitive(raw)))$\")"
         }
     }
 

@@ -20,7 +20,7 @@ import Testing
             allow("file-write-data", "\(testHome)/notes.txt"),
         ])
         let titles = s.files.map(\.title)
-        #expect(titles == ["The app itself", "Its own data", "~/Movies", "System files", "Devices", "Other locations"])
+        #expect(titles == ["The app itself", "Its own data", "~/Movies", "Shared temp folder", "System files", "Devices", "Other locations"])
         let own = try #require(s.files.first { $0.title == "Its own data" })
         #expect(own.access == "read & write")
         #expect(own.detail.contains("~/Library/Application Support/Foo"))
@@ -37,7 +37,7 @@ import Testing
             allow("mach-lookup", "org.example.helper"),
             allow("mach-lookup", "com.apple.windowserver.active"),
         ])
-        #expect(Set(s.network.map(\.title)) == ["Connect out to port 443 (HTTPS)", "Look up host names (DNS)"])
+        #expect(Set(s.network.map(\.title)) == ["Connect out to port 443 (HTTPS), any host", "Look up host names (DNS)"])
         #expect(s.launches.map(\.title) == ["sh"], "its own helpers are not listed as launches")
         #expect(s.services.contains { $0.title == "Other services" && $0.detail == "org.example.helper" })
         #expect(s.services.contains { $0.title == "Its own settings" && $0.detail == "com.example.foo" })

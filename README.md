@@ -129,7 +129,11 @@ Design records: [`docs/DECISIONS.md`](docs/DECISIONS.md). Platform research: [`d
 - **A launcher keeps the Menshen version it was made with.** After rebuilding Menshen, refresh a replaced app with Restore and then Replace.
 - `sandbox-exec` is deprecated and `system.sb` is a private interface. Re-test after every macOS update.
 - **While replaced:** the Dock may show a second icon while the app runs, because the running process belongs to the hidden original. Routing documents and "Open with" to the launcher is best-effort. The app's updater updates the hidden original, after which enforce refuses until the app is re-learned. macOS App Management protection may need to allow Menshen to rename apps.
-- Threat model: Menshen protects against a compromised *app*, not a compromised user account. Configs are user-writable.
+- **Threat model:** Menshen protects against a compromised *app*, not a compromised user account. A wrapped app can never read or write Menshen's own configs, captures, swap registry or logs, nor write any launcher or another replaced app's original; that block is compiled into every profile and can't be switched off. Other programs running *outside* a sandbox as you can still edit configs and launchers, and Menshen can't detect that: tamper-evident configs need a stable code signature (Developer ID), and the launchers are signed ad hoc.
+- **Learn mode protects nothing.** The app runs with everything allowed while it is learned, so learn only apps you'd run unsandboxed anyway, and review the result.
+- **Configs are checked on load.** File types must be letters and digits, and name patterns must be Menshen's own; a config that fails is refused (the app shows which and why) rather than compiled.
+- **The kernel's sandbox log is visible to every process you run** (`log stream`), so other programs can watch what wrapped apps access or are denied. That's how macOS works, not something Menshen adds.
+- **A single write to a folder of your files** (`~/Documents`, `~/Downloads`…) while learning allows writing anywhere in that folder. Such rules are marked "writes outside"; review them.
 
 ## Development
 

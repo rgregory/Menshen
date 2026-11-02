@@ -42,7 +42,10 @@ import Testing
         let lines = text.split(separator: "\n").map(String.init)
         #expect(!text.contains("; L-") && !text.contains("; H-") && !text.contains("seen="), "IDs and counts stay in the JSON")
         #expect(!text.contains("com.apple.windowserver.active"), "covered by the always-on com.apple. prefix")
-        #expect(lines.filter { $0.hasPrefix("(deny file-read* file-write*") }.count == 1, "one statement for all protected locations")
+        let hardening = try #require(lines.firstIndex { $0.hasPrefix(";; --- hardening") })
+        let own = lines.firstIndex { $0.hasPrefix(";; --- Menshen's own files") } ?? lines.count
+        #expect(lines[hardening..<own].filter { $0.hasPrefix("(deny file-read* file-write*") }.count == 2,
+                "one statement for protected folders, one for secrets matched by name")
         #expect(text.contains("(deny file-read* file-write*\n    (subpath (home \"/.ssh\"))\n    (subpath (home \"/.aws\"))"))
         #expect(lines.contains("(allow file-read-metadata)"))
         #expect(lines.filter { $0.hasPrefix(";") }.count <= 6, "only a header and section titles")

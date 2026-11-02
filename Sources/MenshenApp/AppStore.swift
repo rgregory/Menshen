@@ -69,6 +69,8 @@ final class AppStore {
     private(set) var selection: String?
     var tab: DetailTab = .overview
     var message: String?
+    /// Unreadable configs already reported, so a refresh doesn't alert about them again.
+    @ObservationIgnored private var reportedUnreadable: Set<String> = []
 
     // Session tab
     var sessions: [String: LiveSession] = [:]
@@ -128,6 +130,12 @@ final class AppStore {
 
     func refresh() {
         entries = Library.apps(environment)
+        let unreadable = Library.unreadableConfigs(environment).filter { !reportedUnreadable.contains($0.url.path) }
+        if !unreadable.isEmpty, message == nil {
+            reportedUnreadable.formUnion(unreadable.map(\.url.path))
+            message = "These configs didn't load, so their apps aren't listed. If you didn't edit them, something else did.\n\n"
+                + unreadable.map { "\($0.url.lastPathComponent): \($0.reason)" }.joined(separator: "\n\n")
+        }
         refreshOverview()
         added.removeAll { a in entries.contains { $0.id == a.id } }
         if let key = selection {
@@ -285,7 +293,12 @@ final class AppStore {
 
     func stop(_ key: String) {
         if sessions[key]?.external == true, let swap = entries.first(where: { $0.id == key })?.swap {
-            Swap.runningPIDs(inside: swap.hiddenPath).forEach { kill($0, SIGTERM) }
+            let hidden = swap.hiddenPath
+            Swap.runningPIDs(inside: hidden).forEach { kill($0, SIGTERM) }
+            // Like the CLI: whatever ignores SIGTERM gets SIGKILL after 5 s.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                Swap.runningPIDs(inside: hidden).forEach { kill($0, SIGKILL) }
+            }
             return
         }
         sessions[key]?.stop.stop()
@@ -421,6 +434,11 @@ final class AppStore {
 
     func save(_ key: String) {
         guard let draft = drafts[key], let entry = entries.first(where: { $0.id == key }) else { return }
+        // Same check the CLI makes: don't save a config whose profile the kernel won't load.
+        if let error = SBPLCompiler.validate(SBPLCompiler(environment: environment).compile(draft)) {
+            message = "Not saved: the profile wouldn't load.\n\n\(error)"
+            return
+        }
         do {
             try draft.save(to: entry.configURL)
             refresh()

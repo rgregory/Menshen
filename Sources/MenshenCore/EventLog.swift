@@ -10,9 +10,30 @@ final class NDJSONWriter: @unchecked Sendable {
         try FileManager.default.ensureDirectory(url.deletingLastPathComponent())
         FileManager.default.createFile(atPath: url.path, contents: nil)
         handle = try FileHandle(forWritingTo: url)
+        try handle.seekToEnd()
         encoder = JSONEncoder()
         encoder.outputFormatting = [.withoutEscapingSlashes, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
+    }
+
+    private init(handle: FileHandle) {
+        self.handle = handle
+        encoder = JSONEncoder()
+        encoder.outputFormatting = [.withoutEscapingSlashes, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+    }
+
+    /// A new file `<stem>.<ext>` in `dir`, or `<stem>-2.<ext>`, `-3`… if that name is taken:
+    /// two runs starting in the same second each get their own log (O_EXCL, so no race).
+    static func create(in dir: URL, stem: String, ext: String) throws -> (NDJSONWriter, URL) {
+        try FileManager.default.ensureDirectory(dir)
+        for n in 1...1000 {
+            let url = dir.appendingPathComponent(n == 1 ? "\(stem).\(ext)" : "\(stem)-\(n).\(ext)")
+            let fd = open(url.path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0o644)
+            if fd >= 0 { return (NDJSONWriter(handle: FileHandle(fileDescriptor: fd, closeOnDealloc: true)), url) }
+            guard errno == EEXIST else { break }
+        }
+        throw MenshenError.failed("can't create a log file in \(dir.path)")
     }
 
     func write<T: Encodable>(_ value: T) {

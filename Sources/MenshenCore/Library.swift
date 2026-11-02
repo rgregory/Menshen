@@ -29,12 +29,23 @@ public struct SessionInfo: Identifiable, Sendable {
 
 /// Read-side view of Menshen's folders, for the GUI.
 public enum Library {
-    public static func apps(_ environment: MenshenEnvironment) -> [AppEntry] {
-        let swaps = Swap.records(environment)
+    static func configFiles(_ environment: MenshenEnvironment) -> [URL] {
         let files = (try? FileManager.default.contentsOfDirectory(
             at: environment.profilesDir, includingPropertiesForKeys: nil)) ?? []
-        return files
-            .filter { $0.pathExtension == "json" && !$0.lastPathComponent.contains(".bak-") }
+        return files.filter { $0.pathExtension == "json" && !$0.lastPathComponent.contains(".bak-") }
+    }
+
+    /// Configs that don't load (damaged, or refused for a rule Menshen didn't write), with why.
+    /// `apps` leaves them out, so the GUI reports them instead of letting them vanish.
+    public static func unreadableConfigs(_ environment: MenshenEnvironment) -> [(url: URL, reason: String)] {
+        configFiles(environment).compactMap { url in
+            do { _ = try MenshenConfig.load(url); return nil } catch { return (url, "\(error)") }
+        }
+    }
+
+    public static func apps(_ environment: MenshenEnvironment) -> [AppEntry] {
+        let swaps = Swap.records(environment)
+        return configFiles(environment)
             .compactMap { url in
                 guard let config = try? MenshenConfig.load(url) else { return nil }
                 return AppEntry(config: config, configURL: url,
@@ -122,7 +133,8 @@ public enum Library {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
         f.dateFormat = "yyyyMMdd-HHmmss"
-        if let d = f.date(from: url.deletingPathExtension().lastPathComponent) { return d }
+        // Names are a timestamp, plus "-2", "-3" for runs that started in the same second.
+        if let d = f.date(from: String(url.deletingPathExtension().lastPathComponent.prefix(15))) { return d }
         let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
         return (attrs?[.modificationDate] as? Date) ?? .distantPast
     }

@@ -61,6 +61,12 @@ public enum Learn {
         let learnDir = environment.learnDir(key)
         try fm.ensureDirectory(learnDir)
         let configURL = options.configPath ?? environment.configURL(key)
+        let normalPath = Swap.records(environment).first { $0.hiddenPath == target.identity.path }?.appPath
+            ?? target.identity.path
+        // Before running anything: is the existing config under this key really this app's?
+        if fm.fileExists(atPath: configURL.path), let existing = try? MenshenConfig.load(configURL) {
+            try checkSameApp(existing.target, target.identity, normalPath: normalPath, configURL: configURL)
+        }
 
         let profile = learnDir.appendingPathComponent("learn.sb")
         try SBPLCompiler.learnProfile.write(to: profile, atomically: true, encoding: .utf8)
@@ -99,8 +105,6 @@ public enum Learn {
             captures = previous.learning.captures + captures
             runs = previous.learning.runs + 1
         }
-        let normalPath = Swap.records(environment).first { $0.hiddenPath == target.identity.path }?.appPath
-            ?? target.identity.path
         let config = regenerate(target: target, normalPath: normalPath, captures: captures, runs: runs,
                                 warnings: warnings, previous: previous, keepEdits: options.merge,
                                 environment: environment)
@@ -133,6 +137,20 @@ public enum Learn {
                                 environment: environment)
         config.learning.warnings = config.learning.warnings.reduce(into: []) { if !$0.contains($1) { $0.append($1) } }
         return (config, try config.save(to: configURL))
+    }
+
+    /// Bundle IDs and names are just strings in Info.plist, so another app can claim this
+    /// app's key. Refuses to overwrite a config learned from a different app: a different team,
+    /// or a different location whose app is still there (a moved app is fine).
+    static func checkSameApp(_ stored: TargetIdentity, _ actual: TargetIdentity, normalPath: String,
+                             configURL: URL) throws {
+        let hint = "Forget that config first if it's stale, or learn this one into another file with --config."
+        if let team = stored.teamId, team != actual.teamId {
+            throw MenshenError.refused("\(configURL.lastPathComponent) was learned from \(stored.name) signed by team \(team); \(actual.name) at \(actual.path) is signed by \(actual.teamId ?? "no team"). \(hint)")
+        }
+        if stored.path != normalPath, stored.path != actual.path, FileManager.default.fileExists(atPath: stored.path) {
+            throw MenshenError.refused("\(configURL.lastPathComponent) belongs to the app at \(stored.path), which is still there; \(actual.path) uses the same ID (\(actual.key)). \(hint)")
+        }
     }
 
     /// Captures → config. Keeps your rules, profiles and limits from `previous`, and with
@@ -245,8 +263,7 @@ public enum Enforce {
         say: @escaping @Sendable (String) -> Void
     ) throws -> EnforceSummary {
         let runId = UUID().uuidString
-        let logURL = environment.logsDir(target.identity.key).appendingPathComponent("\(fileStamp()).jsonl")
-        let log = try NDJSONWriter(logURL)
+        let (log, logURL) = try NDJSONWriter.create(in: environment.logsDir(target.identity.key), stem: fileStamp(), ext: "jsonl")
         defer { log.close() }
         let tally = Tally()
         let onRecord = options.onRecord
@@ -303,7 +320,7 @@ public enum Enforce {
         var changes: [String] = []
         if expected.teamId != actual.teamId { changes.append("team ID \(expected.teamId ?? "none") → \(actual.teamId ?? "none")") }
         if expected.signingId != actual.signingId { changes.append("signing ID \(expected.signingId ?? "none") → \(actual.signingId ?? "none")") }
-        if expected.cdhash != actual.cdhash { changes.append("code hash changed (updated or rebuilt)") }
+        if expected.cdhash != actual.cdhash { changes.append("main executable's code hash changed (updated or rebuilt)") }
         guard !changes.isEmpty else { return }
         let message = "\(actual.name) isn't the binary this config was learned from: " + changes.joined(separator: "; ")
         if allowChanged {

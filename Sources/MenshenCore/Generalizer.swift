@@ -162,10 +162,15 @@ public struct Generalizer {
         let areas = Self.libraryAreas.map { environment.home + "/Library/" + $0 } + environment.userAppAreas
         for event in events where event.operation.hasPrefix("file-") || event.operation.hasPrefix("process-exec") {
             guard let path = Self.path(from: event.target),
-                  let area = areas.first(where: { path.hasPrefix($0 + "/") }),
-                  let name = path.dropFirst(area.count + 1).split(separator: "/").first,
-                  owns(String(name)) else { continue }
-            anchors.insert(area + "/" + name)
+                  let area = areas.first(where: { path.hasPrefix($0 + "/") }) else { continue }
+            let parts = path.dropFirst(area.count + 1).split(separator: "/").map(String.init)
+            guard let name = parts.first else { continue }
+            if owns(name) {
+                anchors.insert(area + "/" + name)
+            } else if isVendorFolder(name), parts.count > 1, ownsInsideVendor(parts[1]) {
+                // "Google/Earth" for Google Earth, never all of "Google": that holds Chrome too.
+                anchors.insert(area + "/" + name + "/" + parts[1])
+            }
         }
         return anchors.sorted()
     }
@@ -179,10 +184,28 @@ public struct Generalizer {
             if c == name || c.hasPrefix(name + ".") { return true }
         }
         if let team = target.teamId?.lowercased(), c.hasPrefix(team + ".") { return true }
-        // Vendor folders such as "Google" for "Google Chrome".
-        let words = target.name.split(separator: " ")
-        if words.count > 1, let first = words.first, first.count >= 4, c == first.lowercased() { return true }
+        // Group containers named without the team prefix: "group.com.example.foo".
+        if let id = target.bundleId?.lowercased(), c == "group." + id || c.hasPrefix("group." + id + ".") { return true }
         return false
+    }
+
+    /// A folder named after the first word of a multi-word app name ("Google" for "Google
+    /// Earth"). Shared by the vendor's apps, so the app never owns it as a whole, only its own
+    /// folder inside it (see `ownsInsideVendor`). The name is just a string in Info.plist that
+    /// any app can set, so owning the vendor folder would hand out Chrome's profile to an app
+    /// that calls itself "Google Anything".
+    func isVendorFolder(_ component: String) -> Bool {
+        let words = target.name.split(separator: " ")
+        guard words.count > 1, let first = words.first, first.count >= 4 else { return false }
+        return component.lowercased() == first.lowercased()
+    }
+
+    /// The app's own folder inside its vendor's: the rest of its name ("Earth"), its full name
+    /// ("Google Earth"), or anything `owns` accepts (bundle ID, executable name).
+    func ownsInsideVendor(_ component: String) -> Bool {
+        let c = component.lowercased()
+        let rest = target.name.split(separator: " ").dropFirst().joined(separator: " ").lowercased()
+        return (!rest.isEmpty && c == rest) || owns(component)
     }
 
     func classify(_ path: String, _ cls: OpClass, _ anchors: [String]) -> (Filter, ReportCategory?) {

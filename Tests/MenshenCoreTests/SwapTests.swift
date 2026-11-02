@@ -48,7 +48,10 @@ struct DummyApps {
 
     func writeConfig() throws {
         let target = try ResolvedTarget.resolve(app)
-        try Learn.build(target: target, events: [], environment: env).write(to: env.configURL(target.identity.key))
+        // One learned rule: Replace refuses a config with none (it would never start).
+        let events = [SandboxEvent(process: "x", pid: 1, verdict: .allow, operation: "file-read-data",
+                                   target: "/usr/share/dict/words", count: 1)]
+        try Learn.build(target: target, events: events, environment: env).write(to: env.configURL(target.identity.key))
     }
 
     func cleanUp() { try? FileManager.default.removeItem(atPath: root) }

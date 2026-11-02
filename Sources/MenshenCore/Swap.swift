@@ -96,6 +96,10 @@ public enum Swap {
         guard fm.fileExists(atPath: configURL.path) else {
             throw MenshenError.refused("\(name) has no config yet. Learn it first.")
         }
+        // A config with nothing learned denies everything: the replaced app would never start.
+        guard !(try MenshenConfig.load(configURL)).rules.isEmpty else {
+            throw MenshenError.refused("\(name)'s config has no learned rules, so it would never start. Learn it again, using the app this time.")
+        }
         guard runningPIDs(inside: bundle).isEmpty else {
             throw MenshenError.refused("\(name) is running. Quit it first.")
         }

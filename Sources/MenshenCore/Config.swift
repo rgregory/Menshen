@@ -155,11 +155,52 @@ public struct MenshenConfig: Codable, Equatable, Sendable {
     public static func load(_ url: URL) throws -> MenshenConfig {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
+        var config: MenshenConfig
         do {
-            return try decoder.decode(MenshenConfig.self, from: Data(contentsOf: url))
+            config = try decoder.decode(MenshenConfig.self, from: Data(contentsOf: url))
         } catch {
             throw MenshenError.failed("can't read config \(url.path): \(error)")
         }
+        try config.checkRegexFilters(source: url.path)
+        return config
+    }
+
+    /// File types and name patterns compile into SBPL regex literals, which can't be escaped
+    /// the way strings are. Creation validates them, but a JSON file can hold anything, so
+    /// they are checked again on every load: file types must be letters and digits, and name
+    /// patterns must be Menshen's own (an older version of a built-in pattern is updated).
+    mutating func checkRegexFilters(source: String) throws {
+        for rule in rules + hardening where rule.filter.kind == .fileTypes {
+            guard let value = rule.filter.value, Self.isFileTypeList(value) else {
+                throw MenshenError.refused("\(source): rule \(rule.id) has file types \"\(rule.filter.value ?? "")\"; only letters and digits are allowed, like mp4,mkv")
+            }
+        }
+        func fix(_ list: inout [Rule]) throws {
+            for i in list.indices where list[i].filter.kind == .homePattern {
+                let value = list[i].filter.value ?? ""
+                if Self.isSafePattern(value) { continue }
+                if let entry = Hardening.entries.first(where: { $0.id == list[i].id }), let pattern = entry.pattern {
+                    list[i].filter.value = pattern
+                    continue
+                }
+                throw MenshenError.refused("\(source): rule \(list[i].id) has a name pattern Menshen didn't write: \"\(value)\"")
+            }
+        }
+        try fix(&rules)
+        try fix(&hardening)
+    }
+
+    /// "mp4,mkv": comma-separated, each 1–16 ASCII letters or digits.
+    static func isFileTypeList(_ value: String) -> Bool {
+        let parts = value.split(separator: ",", omittingEmptySubsequences: false)
+        return !parts.isEmpty && parts.allSatisfy { p in
+            !p.isEmpty && p.count <= 16 && p.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber) }
+        }
+    }
+
+    /// One of the built-in hardening patterns, exactly.
+    static func isSafePattern(_ value: String) -> Bool {
+        Hardening.entries.contains { $0.pattern == value }
     }
 
     public func write(to url: URL) throws {

@@ -77,7 +77,11 @@ public enum RuleText {
         if let label = rule.label, let category = FileCategory(rawValue: label) {
             return "\(verb(rule.operations)) all \(category.noun)"
         }
-        let object = object(rule.filter)
+        var object = object(rule.filter)
+        // SBPL can't name hosts, so a network rule allows its port on every host. Say so.
+        if rule.filter.kind == .remote || rule.filter.kind == .local, rule.filter.value?.hasPrefix("*:") == true {
+            object += ", any host"
+        }
         if rule.operations == ["network-outbound"], rule.filter.kind == .literal, let path = rule.filter.value {
             switch socketName(path) {
             case "DNS lookups": return "Look up host names (DNS)"
@@ -140,6 +144,8 @@ public struct AccessSummary: Sendable {
             let short = environment.abbreviate(path)
             if path.isWithin(bundle) {
                 add("The app itself", "", rule.operations, 0)
+            } else if let temp = environment.userTempDir, path.isWithin(temp) {
+                add("Shared temp folder", "used by all your apps: \(short)", rule.operations, 4)
             } else if let anchor = anchors.first(where: { path.isWithin($0) }) {
                 add("Its own data", environment.abbreviate(anchor), rule.operations, 1)
             } else if path.hasPrefix("/dev/") || path == "/dev" {

@@ -93,6 +93,8 @@ public struct Hardening: Sendable {
         Entry(id: "H-contacts", title: "Contacts", path: "~/Library/Application Support/AddressBook", protection: .readWrite),
         Entry(id: "H-calendars", title: "Calendars", path: "~/Library/Calendars", protection: .readWrite),
         Entry(id: "H-photos", title: "Photos library", path: "~/Pictures/Photos Library.photoslibrary", protection: .readWrite),
+        Entry(id: "H-photos-libraries", title: "Photos libraries with other names or places", path: "~",
+              protection: .readWrite, pattern: #"\.photoslibrary(/.*)?$"#),
         // AI agents: tokens, sessions and their tool configs.
         Entry(id: "H-claude", title: "Claude Code credentials and sessions", path: "~/.claude", protection: .readWrite),
         Entry(id: "H-claude-desktop", title: "Claude desktop app data", path: "~/Library/Application Support/Claude", protection: .readWrite),
