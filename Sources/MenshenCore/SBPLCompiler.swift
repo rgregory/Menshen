@@ -314,6 +314,7 @@ public struct SBPLCompiler {
         case .subpath: return "(subpath \(path(value)))"
         case .literal: return "(literal \(path(value)))"
         case .globalName: return "(global-name \(quote(value)))"
+        case .globalNamePrefix: return "(global-name-prefix \(quote(value)))"
         case .xpcServiceName: return "(xpc-service-name \(quote(value)))"
         case .localName: return "(local-name \(quote(value)))"
         case .remote: return "(remote ip \(quote(value)))"
@@ -328,6 +329,9 @@ public struct SBPLCompiler {
         case .homePattern:
             guard MenshenConfig.isSafePattern(raw) else { return Self.matchesNothing }
             return "(require-all (subpath home-dir) (regex #\"\(raw)\"))"
+        case .socketPattern:
+            guard MenshenConfig.isSafePattern(raw, .socketPattern) else { return Self.matchesNothing }
+            return "(regex #\"\(raw)\")"
         case .fileTypes:
             guard MenshenConfig.isFileTypeList(raw) else { return Self.matchesNothing }
             return "(regex #\"\\.(\(Self.caseInsensitive(raw)))$\")"

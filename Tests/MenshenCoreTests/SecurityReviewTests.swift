@@ -93,6 +93,23 @@ import Testing
         }
     }
 
+    @Test func unknownSocketPatternIsRefused() {
+        #expect(throws: MenshenError.self) {
+            _ = try roundTrip { $0.rules.append(Rule(action: .allow, operations: ["network-outbound"],
+                                                     filter: Filter(.socketPattern, ".*"), source: .custom)) }
+        }
+        #expect(SBPLCompiler(environment: env).filterText(Filter(.socketPattern, ".*")) == SBPLCompiler.matchesNothing)
+    }
+
+    @Test func olderBuiltInSocketPatternIsUpdated() throws {
+        let c = try roundTrip { c in
+            let i = c.hardening.firstIndex { $0.id == "H-sock-containers" }!
+            c.hardening[i].filter.value = #"/docker\.sock$"#
+        }
+        let current = Hardening.sockets.first { $0.id == "H-sock-containers" }!.pattern
+        #expect(c.hardening.first { $0.id == "H-sock-containers" }?.filter.value == current)
+    }
+
     @Test func olderBuiltInPatternIsUpdated() throws {
         let c = try roundTrip { c in
             let i = c.hardening.firstIndex { $0.id == "H-key-files" }!

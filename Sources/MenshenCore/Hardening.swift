@@ -116,6 +116,8 @@ public struct Hardening: Sendable {
         public var id: String
         public var title: String
         public var name: String
+        /// Every service whose name starts with `name`, not just that one.
+        public var prefix = false
     }
 
     public static let services: [Service] = [
@@ -125,7 +127,39 @@ public struct Hardening: Sendable {
         Service(id: "H-svc-btm", title: "Registering login and background items (persistence)",
                 name: "com.apple.backgroundtaskmanagementagent"),
         Service(id: "H-svc-replayd", title: "Screen recording (ReplayKit / ScreenCaptureKit)", name: "com.apple.replayd"),
+        // Apple's `container` engine is driven over XPC (com.apple.container.apiserver and
+        // friends): it can start a container with your home folder mounted, or read other
+        // containers' environment. The ADR-004 prefix allow would otherwise let any app reach it.
+        Service(id: "H-svc-container", title: "Apple's container engine (runs containers that can mount your home folder)",
+                name: "com.apple.container.", prefix: true),
     ]
+
+    /// Unix-domain sockets that hand an app more than it should have: a container engine runs
+    /// a container with your home folder mounted, an SSH or GPG agent signs and decrypts as you.
+    /// Connecting is `network-outbound`, not a file access, so the file entries above (`~/.ssh`,
+    /// `~/.docker`) don't cover them, and neither does the Offline profile (IP only). Learning
+    /// does see connects, so these are FLAGGED like file entries, and denied after learned rules.
+    public struct Socket: Sendable {
+        public var id: String
+        public var title: String
+        /// A regex on the socket's full path, compiled as `(regex #"…")`.
+        public var pattern: String
+    }
+
+    public static let sockets: [Socket] = [
+        Socket(id: "H-sock-containers",
+               title: "Container engine sockets (Docker, Podman, Colima, OrbStack, Lima)",
+               pattern: #"/(docker|podman|containerd|colima|orbstack)[^/]*\.sock$"#),
+        Socket(id: "H-sock-ssh-agent", title: "The macOS ssh-agent socket (signs as you with your SSH keys)",
+               pattern: #"^(/private)?/tmp/(com\.apple\.launchd\.[^/]+/Listeners|ssh-[^/]+/agent\.[0-9]+)$"#),
+        Socket(id: "H-sock-agents", title: "Other SSH and GPG agent sockets (1Password, Secretive, gpg-agent)",
+               pattern: #"/(agent\.sock|socket\.ssh|S\.gpg-agent[^/]*)$"#),
+    ]
+
+    /// The socket entry that blocks connecting to `path`, if any.
+    public static func socket(for path: String) -> Socket? {
+        sockets.first { path.range(of: $0.pattern, options: .regularExpression) != nil }
+    }
 
     public static let appleEventsID = "H-apple-events"
     public static let osascriptID = "H-osascript"
@@ -178,9 +212,18 @@ public struct Hardening: Sendable {
             }
         }
         for service in Self.services {
+            let what = service.prefix ? "Apple services \(service.name)*" : "Apple service \(service.name)"
             rules.append(Rule(id: service.id, action: .deny, operations: ["mach-lookup"],
-                              filter: Filter(.globalName, service.name), source: .hardening,
-                              note: "\(service.title). Apple service \(service.name), denied for every app; set to allow if this app needs it."))
+                              filter: Filter(service.prefix ? .globalNamePrefix : .globalName, service.name),
+                              source: .hardening,
+                              note: "\(service.title). \(what), denied for every app; set to allow if this app needs it."))
+        }
+        for socket in Self.sockets {
+            rules.append(Rule(id: socket.id, action: .deny, operations: ["network-outbound"],
+                              filter: Filter(.socketPattern, socket.pattern), source: .hardening,
+                              seen: hits[socket.id]?.count ?? 0,
+                              flagged: hits[socket.id] == nil ? nil : true,
+                              note: note(socket.title, hits[socket.id])))
         }
         rules.append(Rule(id: Self.appleEventsID, action: .deny, operations: ["appleevent-send"], filter: .any,
                           source: .hardening, seen: hits[Self.appleEventsID]?.count ?? 0,

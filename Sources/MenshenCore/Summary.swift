@@ -203,6 +203,14 @@ public struct AccessSummary: Sendable {
             let detail = rule.flagged == true ? "tried during learning (\(rule.seen)×)" : "allowed by you or as its own data"
             s.sensitive.append(Item(title: title, detail: detail, access: state, flagged: rule.flagged == true))
         }
+        // A non-Apple Mach service is another program acting for this one, outside its sandbox
+        // (a helper, a daemon). Learned, so allowed, but worth a look.
+        for rule in allowed where rule.operations == ["mach-lookup"] && rule.filter.kind == .globalName {
+            guard let name = rule.filter.value, !name.hasPrefix("com.apple.") else { continue }
+            s.sensitive.append(Item(title: "Non-Apple service \(name)",
+                                    detail: "learned; it runs outside the sandbox, so set it to deny if you don't expect it",
+                                    access: "allowed", flagged: true))
+        }
         s.sensitive.sort { $0.flagged && !$1.flagged }
         s.applyProfiles(config)
         return s

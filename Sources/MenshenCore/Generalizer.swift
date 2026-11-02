@@ -102,6 +102,10 @@ public struct Generalizer {
                 continue
             }
             if op.hasPrefix("network-") {
+                if op == "network-outbound", event.target.hasPrefix("/"), let socket = Hardening.socket(for: event.target) {
+                    hit(socket.id, event)
+                    continue
+                }
                 let (filter, category) = Self.networkFilter(op, event.target)
                 record([op], filter, category, event.count)
                 continue

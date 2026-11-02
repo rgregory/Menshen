@@ -36,6 +36,22 @@ import Testing
         #expect(lines.contains("(allow mach-lookup (global-name-prefix \"com.apple.\") (with report))"))
     }
 
+    /// The container engine (a Mach prefix) and escape sockets are denied in the hardening section,
+    /// after the always-on `com.apple.` allow and learned sockets, so they win.
+    @Test func containerEngineAndEscapeSocketsAreDenied() throws {
+        let text = SBPLCompiler(environment: env).compile(sampleConfig())
+        let lines = text.split(separator: "\n").map(String.init)
+        let hardening = try #require(lines.firstIndex { $0.hasPrefix(";; --- hardening") })
+        let engine = try #require(lines.firstIndex { $0.contains("(global-name-prefix \"com.apple.container.\")") })
+        #expect(engine > hardening)
+        #expect(text.contains("(deny mach-lookup"))
+        let socketLine = try #require(lines.firstIndex { $0.hasPrefix("(deny network-outbound") })
+        #expect(socketLine > hardening)
+        for socket in Hardening.sockets {
+            #expect(text.contains("(regex #\"\(socket.pattern)\")"), "\(socket.id) compiled")
+        }
+    }
+
     /// Simple, auditable output: grouped statements, no per-rule comments, nothing redundant.
     @Test func outputIsCompact() throws {
         let text = SBPLCompiler(environment: env).compile(sampleConfig())

@@ -40,6 +40,9 @@ import Testing
         #expect(Set(s.network.map(\.title)) == ["Connect out to port 443 (HTTPS), any host", "Look up host names (DNS)"])
         #expect(s.launches.map(\.title) == ["sh"], "its own helpers are not listed as launches")
         #expect(s.services.contains { $0.title == "Other services" && $0.detail == "org.example.helper" })
+        let helper = s.sensitive.first { $0.title == "Non-Apple service org.example.helper" }
+        #expect(helper?.flagged == true && helper?.access == "allowed", "a learned non-Apple service stands out")
+        #expect(!s.sensitive.contains { $0.title.contains("com.apple.") })
         #expect(s.services.contains { $0.title == "Its own settings" && $0.detail == "com.example.foo" })
     }
 

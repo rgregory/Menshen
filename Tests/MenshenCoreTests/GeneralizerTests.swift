@@ -30,6 +30,44 @@ func allow(_ op: String, _ target: String, count: Int = 1) -> SandboxEvent {
         config.rules.first { $0.operations == [op] && $0.filter == Filter(kind, value) }
     }
 
+    /// Connecting to a container engine's or an agent's socket is FLAGGED like a protected file,
+    /// not learned; other sockets (DNS) are learned as before.
+    @Test func escapeSocketsAreFlaggedNotLearned() {
+        let launchd = "/private/tmp/com.apple.launchd.AbCd/Listeners"
+        let c = build([
+            allow("network-outbound", "/private/var/run/docker.sock"),
+            allow("network-outbound", launchd),
+            allow("network-outbound", "/private/var/run/mDNSResponder"),
+        ])
+        #expect(learned(c, "network-outbound", .literal, "/private/var/run/docker.sock") == nil)
+        #expect(learned(c, "network-outbound", .literal, launchd) == nil)
+        #expect(learned(c, "network-outbound", .literal, "/private/var/run/mDNSResponder") != nil, "DNS is learned as before")
+        #expect(c.hardening.first { $0.id == "H-sock-containers" }?.flagged == true)
+        #expect(c.hardening.first { $0.id == "H-sock-ssh-agent" }?.flagged == true)
+        #expect(c.hardening.first { $0.id == "H-sock-agents" }?.flagged == nil)
+    }
+
+    @Test func socketPatternsMatchTheRealPaths() {
+        let blocked = [
+            ("/private/var/run/docker.sock", "H-sock-containers"),
+            ("\(testHome)/.docker/run/docker.sock", "H-sock-containers"),
+            ("\(testHome)/.colima/default/docker.sock", "H-sock-containers"),
+            ("\(testHome)/.orbstack/run/docker.sock", "H-sock-containers"),
+            ("\(testHome)/.rd/docker.sock", "H-sock-containers"),
+            ("\(testHome)/.local/share/containers/podman/machine/podman.sock", "H-sock-containers"),
+            ("/private/tmp/com.apple.launchd.x1Y2z3/Listeners", "H-sock-ssh-agent"),
+            ("/tmp/ssh-AbC123/agent.4242", "H-sock-ssh-agent"),
+            ("\(testHome)/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock", "H-sock-agents"),
+            ("\(testHome)/Library/Containers/com.maxgoedjen.Secretive.SecretAgent/Data/socket.ssh", "H-sock-agents"),
+            ("\(testHome)/.gnupg/S.gpg-agent.ssh", "H-sock-agents"),
+        ]
+        for (path, id) in blocked { #expect(Hardening.socket(for: path)?.id == id, "\(path)") }
+        for path in ["/private/var/run/syslog", "/private/var/run/mDNSResponder", "\(testHome)/Library/Caches/foo/ipc.sock",
+                     "/private/tmp/com.apple.launchd.x1Y2z3/Other"] {
+            #expect(Hardening.socket(for: path) == nil, "\(path)")
+        }
+    }
+
     @Test func bundleAndOwnLibraryFoldersBecomeAnchors() throws {
         let c = build([
             allow("file-read-data", "/Applications/Foo.app/Contents/Resources/a.png"),

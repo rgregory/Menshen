@@ -27,6 +27,8 @@ public enum FilterKind: String, Codable, Sendable {
     case subpath
     case literal
     case globalName = "global-name"
+    /// Every Mach service whose name starts with this ("com.apple.container.").
+    case globalNamePrefix = "global-name-prefix"
     /// An XPC service, reported by the kernel as "mach-lookup <name> (xpc)".
     case xpcServiceName = "xpc-service-name"
     case localName = "local-name"
@@ -41,6 +43,9 @@ public enum FilterKind: String, Codable, Sendable {
     case fileTypes = "file-types"
     /// A regex on full paths under the home folder (secrets by name, e.g. .env files).
     case homePattern = "home-pattern"
+    /// A regex on the full path of a Unix-domain socket (Docker's, an SSH agent's). Only
+    /// Menshen's own patterns are accepted, like `homePattern`.
+    case socketPattern = "socket-pattern"
 }
 
 public struct Filter: Codable, Hashable, Sendable {
@@ -176,10 +181,14 @@ public struct MenshenConfig: Codable, Equatable, Sendable {
             }
         }
         func fix(_ list: inout [Rule]) throws {
-            for i in list.indices where list[i].filter.kind == .homePattern {
+            for i in list.indices where list[i].filter.kind == .homePattern || list[i].filter.kind == .socketPattern {
+                let kind = list[i].filter.kind
                 let value = list[i].filter.value ?? ""
-                if Self.isSafePattern(value) { continue }
-                if let entry = Hardening.entries.first(where: { $0.id == list[i].id }), let pattern = entry.pattern {
+                if Self.isSafePattern(value, kind) { continue }
+                let builtIn = kind == .socketPattern
+                    ? Hardening.sockets.first(where: { $0.id == list[i].id })?.pattern
+                    : Hardening.entries.first(where: { $0.id == list[i].id })?.pattern
+                if let pattern = builtIn {
                     list[i].filter.value = pattern
                     continue
                 }
@@ -199,8 +208,10 @@ public struct MenshenConfig: Codable, Equatable, Sendable {
     }
 
     /// One of the built-in hardening patterns, exactly.
-    static func isSafePattern(_ value: String) -> Bool {
-        Hardening.entries.contains { $0.pattern == value }
+    static func isSafePattern(_ value: String, _ kind: FilterKind = .homePattern) -> Bool {
+        kind == .socketPattern
+            ? Hardening.sockets.contains { $0.pattern == value }
+            : Hardening.entries.contains { $0.pattern == value }
     }
 
     public func write(to url: URL) throws {
@@ -355,7 +366,7 @@ public enum Profile: String, Codable, CaseIterable, Sendable {
 
     public var explanation: String {
         switch self {
-        case .offline: return "No internet or local-network connections, even if learned. Local sockets (logging, DNS) still work."
+        case .offline: return "No internet or local-network connections, even if learned. Unix sockets aren't IP, so learned ones (logging, DNS) still work; container engines' and SSH agents' are blocked for every app by hardening."
         case .tempOnly: return "Writes only to temp folders, never your files, even if learned. Command-line tools get a private temp folder (TMPDIR); Mac apps use the shared system one."
         case .noLaunch: return "Can't start other programs, only its own helpers. It also can't have macOS open apps, documents or links, so links won't open in your browser."
         case .background: return "Low CPU priority and throttled disk I/O, so it can't hog the Mac."

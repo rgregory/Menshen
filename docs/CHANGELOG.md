@@ -6,6 +6,11 @@ All notable changes are documented here.
 
 ## [Unreleased] — 0.2.0
 
+### Security: escape hatches found in Shentu
+- Apple's container engine (`com.apple.container.*`) is denied for every app (ADR-010): the always-on `com.apple.` allow let any enforced app drive it over XPC and start a container with your home folder mounted (`containerEngineIsDenied`).
+- Connecting to a container engine's socket (Docker, Podman, Colima, OrbStack, Lima) or an SSH or GPG agent's (macOS ssh-agent, 1Password, Secretive, gpg-agent) is denied for every app, and FLAGGED when learning sees it (ADR-011). Connecting is `network-outbound`, not a file access, so the `~/.ssh` and `~/.docker` protections didn't cover it, and Offline (IP only) doesn't either (`escapeSocketsAreDenied`).
+- A learned non-Apple Mach service shows as flagged under Sensitive on the Dashboard: it's another program acting for the app, outside its sandbox.
+
 ### Changed: tighter compiled profiles
 - Profiles leave out the learned and your allows they cancel anyway: every write under temp-only, every launch under No other programs, IP network rules under Offline. The kernel enforces the same thing; the compiled file now shows only what is really allowed. The JSON keeps every rule.
 - Temp-only no longer allows writing anywhere in `/dev`: only `/dev/null`, `zero`, `random`, `urandom`, `tty`, `dtracehelper`, `/dev/fd`, the terminal (`/dev/ttysN`) and devices learning saw the app write.

@@ -51,6 +51,40 @@ extension KernelTests {
             return p.terminationStatus
         }
 
+        /// The probe's output line, for answers that aren't just yes or no (launchd's kr).
+        func output(_ sbplText: String, _ args: [String]) throws -> String {
+            let profile = dir + "/p-\(UUID().uuidString).sb"
+            try sbplText.write(toFile: profile, atomically: true, encoding: .utf8)
+            let p = Process()
+            let pipe = Pipe()
+            p.executableURL = URL(fileURLWithPath: "/usr/bin/sandbox-exec")
+            p.arguments = ["-f", profile, probe] + args
+            p.standardOutput = pipe
+            p.standardError = FileHandle.nullDevice
+            try p.run()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            p.waitUntilExit()
+            return String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        func unixListener(_ path: String) throws -> Int32 {
+            try FileManager.default.createDirectory(atPath: (path as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
+            unlink(path)
+            var addr = sockaddr_un()
+            let bytes = Array(path.utf8)
+            try #require(bytes.count < MemoryLayout.size(ofValue: addr.sun_path), "socket path too long: \(path)")
+            addr.sun_family = sa_family_t(AF_UNIX)
+            addr.sun_len = UInt8(MemoryLayout<sockaddr_un>.size)
+            withUnsafeMutableBytes(of: &addr.sun_path) { $0.copyBytes(from: bytes) }
+            let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+            let rc = withUnsafeMutablePointer(to: &addr) {
+                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
+            }
+            try #require(rc == 0, "bind \(path): errno \(errno)")
+            listen(fd, 4)
+            return fd
+        }
+
         @Test func appleServicesAndPreferencesAreReachable() throws {
             let profile = try compiled()
             #expect(try run(profile, ["pref", "-"]) == 0, "the global preference domain is readable")
@@ -66,12 +100,59 @@ extension KernelTests {
             let config = Learn.build(target: target, events: [], environment: .current())
             let compiler = SBPLCompiler(environment: .current())
             let profile = compiler.compile(config)
-            for service in Hardening.services {
+            for service in Hardening.services where !service.prefix {
                 var open = config
                 let i = try #require(open.hardening.firstIndex { $0.id == service.id })
                 open.hardening[i].action = .allow
                 #expect(try run(compiler.compile(open), ["mach", service.name]) == 0, "\(service.name) exists and is reachable")
                 #expect(try run(profile, ["mach", service.name]) != 0, "\(service.name) is denied")
+            }
+        }
+
+        /// Apple's container engine is a prefix and may not be installed, so this compares launchd's
+        /// answers instead of requiring a success: a lookup the sandbox denies answers like one under
+        /// the control profile (no Apple allow at all), which differs from launchd's own answer
+        /// ("unknown service" if the engine isn't installed, success if it is).
+        @Test func containerEngineIsDenied() throws {
+            let target = try ResolvedTarget.resolve(probe)
+            let config = Learn.build(target: target, events: [], environment: .current())
+            let compiler = SBPLCompiler(environment: .current())
+            var open = config
+            let i = try #require(open.hardening.firstIndex { $0.id == "H-svc-container" })
+            open.hardening[i].action = .allow
+            let engine = "com.apple.container.apiserver"
+            let denied = try output(control, ["mach", engine])
+            let reachable = try output(compiler.compile(open), ["mach", engine])
+            try #require(reachable != denied, "control: allowed (\(reachable)) must differ from denied (\(denied))")
+            #expect(try output(compiler.compile(config), ["mach", engine]) == denied, "the engine is blocked")
+            #expect(try run(compiler.compile(config), ["mach", "com.apple.pasteboard.1"]) == 0, "Apple's other services still work")
+        }
+
+        /// Connecting to a Unix socket is network-outbound, not a file access. A learned allow for a
+        /// container engine's or ssh-agent's socket loses to hardening; another learned socket works.
+        @Test func escapeSocketsAreDenied() throws {
+            let docker = dir + "/docker.sock", other = dir + "/other.sock"
+            let agentDir = "/private/tmp/com.apple.launchd.menshen-\(UUID().uuidString.prefix(8))"
+            defer { try? FileManager.default.removeItem(atPath: agentDir) }
+            let agent = agentDir + "/Listeners"
+            let fds = try [docker, other, agent].map { try unixListener($0) }
+            defer { fds.forEach { close($0) } }
+            let target = try ResolvedTarget.resolve(probe)
+            var config = Learn.build(target: target, events: [], environment: .current())
+            for path in [docker, other, agent] {
+                config.rules.append(Rule(action: .allow, operations: ["network-outbound"], filter: Filter(.literal, path), source: .custom))
+            }
+            let compiler = SBPLCompiler(environment: .current())
+            let profile = compiler.compile(config)
+            #expect(try run(profile, ["unix", other]) == 0, "control: another learned socket still works")
+            #expect(try run(control, ["unix", other]) != 0, "control: the probe can fail")
+            #expect(try run(profile, ["unix", docker]) != 0, "a container engine's socket is blocked")
+            #expect(try run(profile, ["unix", agent]) != 0, "ssh-agent's socket is blocked")
+            for (id, path) in [("H-sock-containers", docker), ("H-sock-ssh-agent", agent)] {
+                var open = config
+                let i = try #require(open.hardening.firstIndex { $0.id == id })
+                open.hardening[i].action = .allow
+                #expect(try run(compiler.compile(open), ["unix", path]) == 0, "mutation: \(id) is what blocks it")
             }
         }
 
