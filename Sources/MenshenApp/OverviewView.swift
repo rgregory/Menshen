@@ -43,7 +43,7 @@ struct OverviewView: View {
             }
             .padding(.horizontal, Things.gutter).padding(.vertical, 24)
             .frame(maxWidth: Things.column, alignment: .leading)
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 

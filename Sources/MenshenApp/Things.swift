@@ -9,7 +9,7 @@ import SwiftUI
 enum Things {
     static let titleFont = Font.system(size: 26, weight: .bold)
     static let sectionFont = Font.system(size: 13, weight: .semibold)
-    /// Width of the centered content column (Overview lists).
+    /// Maximum width of the left-anchored content column (Overview lists).
     static let column: CGFloat = 760
     static let gutter: CGFloat = 32
 }
