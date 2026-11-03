@@ -20,9 +20,6 @@ struct ConfigView: View {
         return VStack(alignment: .leading, spacing: 10) {
             // After learning, add or take away capabilities: profiles and file kinds first, then
             // rule by rule in the table. These switches save on their own.
-            if let entry = item.entry {
-                CapabilitiesBar(store: store, entry: entry)
-            }
             HStack {
                 Picker("Show", selection: Bindable(store).ruleFilter) {
                     ForEach(RuleFilter.allCases) { Text($0.rawValue).tag($0) }
@@ -127,14 +124,20 @@ struct ConfigView: View {
     }
 }
 
-/// "Add Permission…": a broad rule of your own — file types anywhere, or a folder.
+/// "Add Permission…": the capability switches (they apply right away), then a broad rule of
+/// your own — a file kind, file types anywhere, or a folder — added to the draft.
 struct AddPermissionSheet: View {
     let store: AppStore
     let key: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Add a permission").font(.headline)
+            Text("Permissions").font(.headline)
+            if let entry = store.entries.first(where: { $0.id == key }) {
+                CapabilitiesBar(store: store, entry: entry)
+                Divider()
+            }
+            Text("Add a rule").font(.subheadline.bold())
             Picker("Allow", selection: Bindable(store).newAccess) {
                 ForEach(CustomAccess.allCases, id: \.self) { Text($0.rawValue).tag($0) }
             }
@@ -172,19 +175,19 @@ struct AddPermissionSheet: View {
                 .font(.caption).foregroundStyle(.secondary)
             HStack {
                 Spacer()
-                Button("Cancel") { store.addingPermission = false }.keyboardShortcut(.cancelAction)
+                Button("Done") { store.addingPermission = false }.keyboardShortcut(.cancelAction)
                 Button("Add") { store.addPermission(key) }.keyboardShortcut(.defaultAction)
                     .disabled(store.newKind != .category && store.newValue.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
         .padding()
-        .frame(width: 440)
+        .frame(width: 680)
     }
 }
 
-/// Capabilities you change after learning, kept to three lines so the rule table keeps the
-/// room: profiles, file kinds (plus your own file rules) and limits. Explanations are in the
-/// tooltips. These save on their own and apply the next time the app runs.
+/// Capabilities you change after learning, at the top of Add Permission: profiles, file kinds
+/// (plus your own file rules) and limits. Explanations are in the tooltips. These save on
+/// their own and apply the next time the app runs.
 struct CapabilitiesBar: View {
     let store: AppStore
     let entry: AppEntry
@@ -223,11 +226,6 @@ struct CapabilitiesBar: View {
                     .frame(maxWidth: 240)
                     .help(RuleText.describe(rule))
                 }
-                Button("Add File Types or Folder…") {
-                    store.newKind = .fileTypes
-                    store.permissionAppliesNow = true
-                    store.addingPermission = true
-                }
                 Spacer(minLength: 0)
             }
             HStack(spacing: 16) {
@@ -239,18 +237,11 @@ struct CapabilitiesBar: View {
                     store.applyLimit(entry.id, \.memoryMB, $0)
                 }
                 Spacer(minLength: 0)
-                Text("These save on their own and apply on the next run. Protections stay on.")
+                Text("These save on their own and apply on the next run.")
                     .font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
         }
-        .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
-        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.primary.opacity(0.07)))
-        .sheet(isPresented: Binding(get: { store.addingPermission && store.permissionAppliesNow },
-                                    set: { if !$0 { store.addingPermission = false; store.permissionAppliesNow = false } })) {
-            AddPermissionSheet(store: store, key: entry.id)
-        }
     }
 
     func heading(_ text: String) -> some View {
