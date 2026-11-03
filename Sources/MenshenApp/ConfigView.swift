@@ -18,6 +18,14 @@ struct ConfigView: View {
         let key = item.id
         let dirty = store.isDirty(key)
         return VStack(alignment: .leading, spacing: 10) {
+            // After learning, add or take away capabilities: profiles and file kinds first, then
+            // rule by rule in the table. These switches save on their own.
+            if let entry = item.entry {
+                HStack(alignment: .top, spacing: 16) {
+                    ProfilesCard(store: store, entry: entry).frame(maxWidth: .infinity, alignment: .top)
+                    FileAccessCard(store: store, entry: entry).frame(maxWidth: .infinity, alignment: .top)
+                }
+            }
             HStack {
                 Picker("Show", selection: Bindable(store).ruleFilter) {
                     ForEach(RuleFilter.allCases) { Text($0.rawValue).tag($0) }
@@ -68,6 +76,7 @@ struct ConfigView: View {
                 }
                 .width(28)
             }
+            .frame(minHeight: 220)
             if dirty {
                 Text("Unsaved changes. Save writes a backup of the previous config first.")
                     .font(.caption).foregroundStyle(.orange)

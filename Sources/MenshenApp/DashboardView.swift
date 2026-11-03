@@ -12,13 +12,6 @@ struct DashboardView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 StatusStrip(store: store, item: item, session: session, problem: problem)
-                // The switches you use most sit right under the status, above the activity.
-                if let entry = item.entry {
-                    HStack(alignment: .top, spacing: 16) {
-                        ProfilesCard(store: store, entry: entry).frame(maxWidth: .infinity, alignment: .top)
-                        FileAccessCard(store: store, entry: entry).frame(maxWidth: .infinity, alignment: .top)
-                    }
-                }
                 if let session, session.kind == .enforce {
                     ActivityPanel(title: session.running ? "Live activity" : "This run", live: session.running,
                                   records: session.records)
