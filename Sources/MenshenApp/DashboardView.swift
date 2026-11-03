@@ -27,20 +27,7 @@ struct DashboardView: View {
                                   live: false, records: store.lastRecords)
                 }
                 if let entry = item.entry {
-                    let summary = AccessSummary.make(entry.config, environment: store.environment)
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 320), spacing: 16, alignment: .top)],
-                              alignment: .leading, spacing: 16) {
-                        Card("Files", systemImage: "folder", items: summary.files,
-                             empty: "No file access learned")
-                        Card("Network", systemImage: "network", items: summary.network,
-                             empty: "No network access", footer: "Everything else is blocked.")
-                        Card("Launches", systemImage: "terminal", items: summary.launches,
-                             empty: "Only runs itself")
-                        Card("Services & settings", systemImage: "gearshape.2", items: summary.services, empty: "")
-                        Card("Sensitive", systemImage: "lock.shield", items: summary.sensitive,
-                             empty: "Nothing sensitive was touched while learning",
-                             footer: "\(summary.protectedCount) sensitive locations and behaviors are protected.")
-                    }
+                    AccessSummaryView(summary: AccessSummary.make(entry.config, environment: store.environment))
                 } else {
                     GroupBox {
                         VStack(alignment: .leading, spacing: 8) {
@@ -155,53 +142,72 @@ struct Metric: View {
     }
 }
 
-/// A titled card listing summary items: title on the left, access level on the right.
-struct Card: View {
-    let title: String
-    let systemImage: String
-    let items: [AccessSummary.Item]
-    let empty: String
-    var footer: String?
-
-    init(_ title: String, systemImage: String, items: [AccessSummary.Item], empty: String, footer: String? = nil) {
-        self.title = title
-        self.systemImage = systemImage
-        self.items = items
-        self.empty = empty
-        self.footer = footer
-    }
+/// What the app may do, Things-style: files on the left, everything else on the right, each
+/// section a light card of one-line rows. A detail that doesn't fit is in the row's tooltip.
+struct AccessSummaryView: View {
+    let summary: AccessSummary
 
     var body: some View {
-        GroupBox {
-            VStack(alignment: .leading, spacing: 8) {
-                if items.isEmpty && !empty.isEmpty {
-                    Text(empty).foregroundStyle(.secondary)
+        HStack(alignment: .top, spacing: 24) {
+            AccessSection(title: "Files", items: summary.files, empty: "No file access learned")
+                .frame(maxWidth: .infinity, alignment: .top)
+            VStack(alignment: .leading, spacing: 0) {
+                AccessSection(title: "Network", items: summary.network, empty: "No network access",
+                              footer: "Everything else is blocked.")
+                AccessSection(title: "Launches", items: summary.launches, empty: "Only runs itself")
+                AccessSection(title: "Services & settings", items: summary.services, empty: "None")
+                AccessSection(title: "Sensitive", items: summary.sensitive, empty: "Nothing touched while learning",
+                              footer: "\(summary.protectedCount) locations and behaviors protected.")
+            }
+            .frame(maxWidth: .infinity, alignment: .top)
+        }
+    }
+}
+
+/// A section heading over one card of rows, hairlines between them.
+struct AccessSection: View {
+    let title: String
+    let items: [AccessSummary.Item]
+    let empty: String
+    var footer: String? = nil
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ThingsSection(title: title, count: items.isEmpty ? nil : items.count)
+            VStack(alignment: .leading, spacing: 0) {
+                if items.isEmpty {
+                    Text(empty).foregroundStyle(.secondary).padding(.vertical, 7)
                 }
-                ForEach(items) { item in
-                    HStack(alignment: .firstTextBaseline) {
-                        VStack(alignment: .leading, spacing: 1) {
-                            HStack(spacing: 4) {
-                                if item.flagged { Image(systemName: "flag.fill").foregroundStyle(.orange).font(.caption) }
-                                Text(item.title)
-                            }
-                            if !item.detail.isEmpty {
-                                Text(item.detail).font(.caption).foregroundStyle(.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                        }
-                        Spacer(minLength: 8)
-                        AccessBadge(text: item.access)
-                    }
-                }
-                if let footer {
-                    Text(footer).font(.caption).foregroundStyle(.secondary)
+                ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                    if index > 0 { Divider() }
+                    AccessRow(item: item)
                 }
             }
+            .padding(.horizontal, 10)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(4)
-        } label: {
-            Label(title, systemImage: systemImage).font(.headline)
+            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.primary.opacity(0.07)))
+            if let footer {
+                Text(footer).font(.caption).foregroundStyle(.tertiary).padding(.top, 4).padding(.leading, 2)
+            }
         }
+    }
+}
+
+/// One line: flag, title, detail (truncated in the middle), access badge.
+struct AccessRow: View {
+    let item: AccessSummary.Item
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            if item.flagged { Image(systemName: "flag.fill").font(.caption).foregroundStyle(.orange) }
+            Text(item.title).lineLimit(1).layoutPriority(1)
+            Text(item.detail).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+            Spacer(minLength: 4)
+            AccessBadge(text: item.access)
+        }
+        .padding(.vertical, 6)
+        .help(item.detail.isEmpty ? item.title : "\(item.title)\n\(item.detail)")
     }
 }
 
