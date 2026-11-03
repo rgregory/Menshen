@@ -11,7 +11,7 @@ let usage = """
       menshen show    <App.app | binary | config.json> [--config PATH]
       menshen allow   <App.app | config.json> [--write] CATEGORY… | TYPES… | FOLDER…   e.g. allow VLC.app media
       menshen allow   <App.app | config.json> --remove RULE-ID
-      menshen profile <App.app | config.json> [offline temp-only no-launch background] [--cpu-seconds N] [--memory-mb N] [--none]
+      menshen profile <App.app | config.json> [offline temp-only no-launch] [--cpu-seconds N] [--memory-mb N] [--none]
       menshen forget  <App.app | bundle-id>   move Menshen's data for an app to the Trash
       menshen replace <App.app>       swap the app for a launcher that always runs it under enforce
       menshen restore <App.app | bundle-id>
@@ -30,9 +30,8 @@ let usage = """
              (media, images, documents), some types (mp4 mkv), or a folder (~/Movies).
              Read only unless --write. Protected locations stay blocked.
     profile One-click restrictions on top of what was learned: offline (no network),
-             temp-only (writes only to temp folders), no-launch (no other programs),
-             background (low CPU priority, throttled disk). Plus hard limits on CPU time
-             and memory. With no names, shows the current ones.
+             temp-only (writes only to temp folders), no-launch (no other programs).
+             Plus hard limits on CPU time and memory. With no names, shows the current ones.
     replace  Rename the app to a hidden .Name.menshen.app (untouched) and put a launcher with
              its name and icon in its place, so Dock/Finder/Spotlight run it under enforce.
     restore  Remove the launcher and put the original back.

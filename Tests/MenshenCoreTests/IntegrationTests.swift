@@ -267,11 +267,10 @@ extension KernelTests {
             #expect(records.contains { $0.verdict == .allow && $0.target.hasSuffix("/input.txt") }, "reads still work")
         }
 
-        /// Background priority and limits wrap the launch; the app still runs and is still tracked.
-        @Test func backgroundPriorityStillRunsAndIsTracked() throws {
+        /// Limits wrap the launch; the app still runs and is still tracked.
+        @Test func limitsStillRunAndAreTracked() throws {
             let learned = try learn()
             var config = learned.config
-            config.profiles = [.background]
             config.limits = ResourceLimits(cpuSeconds: 60, memoryMB: 512)
             try config.write(to: learned.configURL)
 

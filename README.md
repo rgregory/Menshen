@@ -45,7 +45,7 @@ One-click restrictions on top of what an app learned. Select any app: its Dashbo
 
 ```sh
 menshen profile /Applications/VLC.app offline no-launch        # no network, no other programs
-menshen profile /Applications/VLC.app temp-only background --memory-mb 2048 --cpu-seconds 3600
+menshen profile /Applications/VLC.app temp-only --memory-mb 2048 --cpu-seconds 3600
 menshen profile /Applications/VLC.app --none                    # clear profiles and limits
 ```
 
@@ -54,7 +54,6 @@ menshen profile /Applications/VLC.app --none                    # clear profiles
 | `offline` | No internet or local-network connections, even if learned. Unix sockets aren't IP, so learned ones (logging, DNS) still work; container engines' and SSH agents' are blocked for every app by hardening. |
 | `temp-only` | Writes only to temp folders, never your files, even if learned. Command-line tools get a private TMPDIR. Mac apps can only use the shared system temp folder (macOS limitation). |
 | `no-launch` | Can't start other programs, only its own helpers. It also can't have macOS open apps, documents or links, so links won't open in your browser. |
-| `background` | Low CPU priority and throttled disk I/O (`taskpolicy`). |
 | `--cpu-seconds` / `--memory-mb` | Hard limits: stopped after N seconds of CPU time, killed above N MiB. |
 
 The sandbox itself can't cap CPU or memory; those come from `taskpolicy` and `ulimit` at launch. A "max 50% CPU" cap isn't offered: macOS has no such control, and it would need a pause/resume watchdog.

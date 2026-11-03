@@ -32,7 +32,7 @@ public final class StopHandle: @unchecked Sendable {
 
 /// How to launch beyond the profile: resource wrappers and extra environment variables.
 public struct LaunchOptions: Sendable {
-    /// Commands that exec the next one, e.g. ["/usr/sbin/taskpolicy", "-c", "background"]. Every
+    /// Commands that exec the next one, e.g. a shell setting `ulimit -t`. Every
     /// wrapper execs in place, so the pid Menshen tracks stays the app's pid.
     public var wrapper: [String] = []
     /// Commands run inside the sandbox, right before the app. Needed for settings that don't

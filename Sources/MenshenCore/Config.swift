@@ -162,12 +162,22 @@ public struct MenshenConfig: Codable, Equatable, Sendable {
         decoder.dateDecodingStrategy = .iso8601
         var config: MenshenConfig
         do {
-            config = try decoder.decode(MenshenConfig.self, from: Data(contentsOf: url))
+            config = try decoder.decode(MenshenConfig.self, from: withoutRetiredProfiles(Data(contentsOf: url)))
         } catch {
             throw MenshenError.failed("can't read config \(url.path): \(error)")
         }
         try config.checkRegexFilters(source: url.path)
         return config
+    }
+
+    /// "background" (CPU and disk priority, not confinement) was a profile until 0.2.0. Configs
+    /// that still list it load without it, rather than failing to decode.
+    static func withoutRetiredProfiles(_ data: Data) -> Data {
+        guard var json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let profiles = json["profiles"] as? [String], profiles.contains("background") else { return data }
+        let kept = profiles.filter { $0 != "background" }
+        json["profiles"] = kept.isEmpty ? nil : kept
+        return (try? JSONSerialization.data(withJSONObject: json)) ?? data
     }
 
     /// File types and name patterns compile into SBPL regex literals, which can't be escaped
@@ -353,14 +363,12 @@ public enum Profile: String, Codable, CaseIterable, Sendable {
     case offline
     case tempOnly = "temp-only"
     case noLaunch = "no-launch"
-    case background
 
     public var title: String {
         switch self {
         case .offline: return "Offline"
         case .tempOnly: return "Temp-only writes"
         case .noLaunch: return "No other programs"
-        case .background: return "Background priority"
         }
     }
 
@@ -369,7 +377,6 @@ public enum Profile: String, Codable, CaseIterable, Sendable {
         case .offline: return "No internet or local-network connections, even if learned. Unix sockets aren't IP, so learned ones (logging, DNS) still work; container engines' and SSH agents' are blocked for every app by hardening."
         case .tempOnly: return "Writes only to temp folders, never your files, even if learned. Command-line tools get a private temp folder (TMPDIR); Mac apps use the shared system one."
         case .noLaunch: return "Can't start other programs, only its own helpers. It also can't have macOS open apps, documents or links, so links won't open in your browser."
-        case .background: return "Low CPU priority and throttled disk I/O, so it can't hog the Mac."
         }
     }
 }

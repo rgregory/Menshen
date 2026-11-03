@@ -78,8 +78,8 @@ public struct SBPLCompiler {
     /// loses to any filtered allow, whatever the order (tested).
     func profileSection(_ config: MenshenConfig, own: String) -> [String] {
         let profiles = Set(config.profiles ?? [])
-        guard !profiles.subtracting([.background]).isEmpty else { return [] }
-        let names = Profile.allCases.filter { profiles.contains($0) && $0 != .background }.map(\.rawValue)
+        guard !profiles.isEmpty else { return [] }
+        let names = Profile.allCases.filter { profiles.contains($0) }.map(\.rawValue)
         var out = ["", ";; --- profiles: \(names.joined(separator: ", "))"]
         if profiles.contains(.offline) {
             out.append("(deny network-outbound (remote ip))")
@@ -132,7 +132,7 @@ public struct SBPLCompiler {
     /// - Offline: IP network rules (local sockets are untouched).
     func withoutShadowed(_ rules: [Rule], _ config: MenshenConfig) -> [Rule] {
         let profiles = Set(config.profiles ?? [])
-        guard !profiles.subtracting([.background]).isEmpty else { return rules }
+        guard !profiles.isEmpty else { return rules }
         return rules.compactMap { rule in
             guard rule.action == .allow else { return rule }
             var ops = rule.operations

@@ -293,15 +293,12 @@ public enum Enforce {
         )
     }
 
-    /// Background priority and hard limits wrap the launch; Temp-only exports a private TMPDIR.
+    /// Hard limits wrap the launch; Temp-only exports a private TMPDIR.
     static func launchOptions(_ config: MenshenConfig, environment: MenshenEnvironment) throws -> LaunchOptions {
         let profiles = Set(config.profiles ?? [])
         var launch = LaunchOptions()
         if let seconds = config.limits?.cpuSeconds, seconds > 0 {
             launch.wrapper += ["/bin/sh", "-c", "ulimit -t \(seconds); exec \"$@\"", "sh"]
-        }
-        if profiles.contains(.background) {
-            launch.wrapper += ["/usr/sbin/taskpolicy", "-c", "background", "-d", "throttle"]
         }
         // The memory limit doesn't survive sandbox-exec (tested), so it's applied inside, right before the app.
         if let mb = config.limits?.memoryMB, mb > 0 {

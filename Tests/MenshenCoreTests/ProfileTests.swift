@@ -20,15 +20,30 @@ extension KernelTests {
             #expect(loaded.profiles == nil && loaded.limits == nil)
         }
 
+        /// "background" was a profile until 0.2.0: a config that lists it loads without it.
+        @Test func retiredBackgroundProfileIsDropped() throws {
+            var config = Learn.build(target: fooTarget, events: [], environment: env)
+            config.profiles = [.offline]
+            let url = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("menshen-bg-\(UUID().uuidString).json")
+            defer { try? FileManager.default.removeItem(at: url) }
+            try config.write(to: url)
+            var json = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as! [String: Any]
+            json["profiles"] = ["offline", "background"]
+            try JSONSerialization.data(withJSONObject: json).write(to: url)
+            #expect(try MenshenConfig.load(url).profiles == [.offline])
+            json["profiles"] = ["background"]
+            try JSONSerialization.data(withJSONObject: json).write(to: url)
+            #expect(try MenshenConfig.load(url).profiles == nil)
+        }
+
         @Test func launchWrapsInPlace() throws {
             var config = Learn.build(target: fooTarget, events: [], environment: env)
-            config.profiles = [.background, .tempOnly]
+            config.profiles = [.tempOnly]
             config.limits = ResourceLimits(cpuSeconds: 30, memoryMB: 256)
             let e = MenshenEnvironment(home: testHome, dataRoot: URL(fileURLWithPath: dir), logsRoot: URL(fileURLWithPath: dir),
                                        userTempRoot: nil)
             let launch = try Enforce.launchOptions(config, environment: e)
-            #expect(launch.wrapper == ["/bin/sh", "-c", "ulimit -t 30; exec \"$@\"", "sh",
-                                       "/usr/sbin/taskpolicy", "-c", "background", "-d", "throttle"])
+            #expect(launch.wrapper == ["/bin/sh", "-c", "ulimit -t 30; exec \"$@\"", "sh"])
             #expect(launch.inner == ["/usr/sbin/taskpolicy", "-m", "256"], "the memory limit must be applied inside the sandbox")
             #expect(launch.environment["TMPDIR"] == e.privateTemp("com.example.foo").path + "/")
             let argv = Runner.command(profile: URL(fileURLWithPath: "/p.sb"), executable: "/a", arguments: ["x"], launch: launch)

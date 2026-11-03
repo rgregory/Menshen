@@ -22,6 +22,9 @@ All notable changes are documented here.
 - Learning never collapses rules to the whole Darwin folder or every app's caches (`$DARWIN/C`, `/0`, `/T`).
 - Overview: one row per app with evenly spaced counts; the allowance switches moved to the Dashboard only. Sandbox Rules regenerates the profile from disk on every click.
 
+### Removed: Background priority
+- The `background` profile (`taskpolicy -c background -d throttle`) is gone: it's about manners, not confinement, and could make media apps stutter. Configs that list it load without it. CPU and memory limits stay.
+
 ### Removed: Restricted Sandbox
 - Dropping an app on Menshen's Dock icon or the sidebar drop zone, **Run Restricted**, the Restricted Sandbox settings sheet and `menshen box` are gone, with `RestrictedSandbox`, `restrictedProfile` and `Enforce.runRestricted`. Apps are confined by learning, then enforcing. ADR-006 is withdrawn; a saved `restricted-sandbox.json` is no longer read and can be deleted.
 - Menshen.app no longer registers as a viewer for apps (`CFBundleDocumentTypes`), and MenshenCore is no longer a library product.
