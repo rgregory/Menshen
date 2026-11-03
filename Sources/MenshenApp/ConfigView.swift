@@ -77,7 +77,7 @@ struct ConfigView: View {
             }
         }
         .padding()
-        .sheet(isPresented: Binding(get: { store.addingPermission && !store.permissionAppliesNow },
+        .sheet(isPresented: Binding(get: { store.addingPermission },
                                     set: { if !$0 { store.addingPermission = false } })) { AddPermissionSheet(store: store, key: key) }
         .sheet(isPresented: Binding(get: { store.sbplText != nil }, set: { if !$0 { store.sbplText = nil } })) {
             VStack(alignment: .leading) {
@@ -124,127 +124,87 @@ struct ConfigView: View {
     }
 }
 
-/// "Add Permission…": the capability switches (they apply right away), then a broad rule of
-/// your own — a file kind, file types anywhere, or a folder — added to the draft.
+/// "Add Permission…": everything you can grant or take away after learning, in one native
+/// grouped form. Every change saves right away (with a backup) and applies on the next run.
 struct AddPermissionSheet: View {
     let store: AppStore
     let key: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Permissions").font(.headline)
-            if let entry = store.entries.first(where: { $0.id == key }) {
-                CapabilitiesBar(store: store, entry: entry)
-                Divider()
+        let entry = store.entries.first { $0.id == key }
+        VStack(spacing: 0) {
+            if let entry {
+                form(entry)
             }
-            Text("Add a rule").font(.subheadline.bold())
-            Picker("Allow", selection: Bindable(store).newAccess) {
-                ForEach(CustomAccess.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-            }
-            .pickerStyle(.segmented)
-            Picker("For", selection: Bindable(store).newKind) {
-                ForEach(PermissionKind.allCases) { Text($0.rawValue).tag($0) }
-            }
-            .pickerStyle(.segmented)
-            switch store.newKind {
-            case .category:
-                Picker("Category", selection: Bindable(store).newCategory) {
-                    ForEach(FileCategory.allCases, id: \.self) { Text($0.title).tag($0) }
-                }
-                // Show exactly what the category covers, as macOS classifies types on this Mac.
-                Text(store.newCategory.extensions.map { ".\($0)" }.joined(separator: " "))
-                    .font(.caption.monospaced()).foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-                if store.newCategory == .documents {
-                    Text("Code, scripts and config files (json, yaml, sh…) are left out on purpose: that's where keys and tokens live.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-            case .fileTypes:
-                TextField("e.g. mp4, mkv, mov", text: Bindable(store).newValue)
-                Text("Every file with these extensions, anywhere.")
-                    .font(.caption).foregroundStyle(.secondary)
-            case .folder:
-                HStack {
-                    TextField("Folder", text: Bindable(store).newValue)
-                    Button("Choose…") { store.chooseFolder() }
-                }
-                Text("Everything inside this folder.").font(.caption).foregroundStyle(.secondary)
-            }
-            Text("Protected locations (like ~/.ssh and other apps' data) stay blocked either way. Save the config to apply.")
-                .font(.caption).foregroundStyle(.secondary)
             HStack {
-                Spacer()
-                Button("Done") { store.addingPermission = false }.keyboardShortcut(.cancelAction)
-                Button("Add") { store.addPermission(key) }.keyboardShortcut(.defaultAction)
-                    .disabled(store.newKind != .category && store.newValue.trimmingCharacters(in: .whitespaces).isEmpty)
+                Text("Changes save right away and apply the next time the app runs. Protected locations stay blocked.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Spacer(minLength: 12)
+                Button("Done") { store.addingPermission = false }.keyboardShortcut(.defaultAction)
             }
+            .padding(.horizontal, 20).padding(.vertical, 12)
         }
-        .padding()
-        .frame(width: 680)
+        .frame(width: 520, height: 600)
     }
-}
 
-/// Capabilities you change after learning, at the top of Add Permission: profiles, file kinds
-/// (plus your own file rules) and limits. Explanations are in the tooltips. These save on
-/// their own and apply the next time the app runs.
-struct CapabilitiesBar: View {
-    let store: AppStore
-    let entry: AppEntry
-
-    var body: some View {
+    func form(_ entry: AppEntry) -> some View {
         let active = Set(entry.config.profiles ?? [])
         let yours = entry.config.rules.filter { $0.source == .custom }
-        let categories = Set(yours.compactMap(\.label))
+        let kinds = Set(yours.compactMap(\.label))
         let others = yours.filter { $0.label == nil }
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 16) {
-                heading("Profiles")
+        let value = store.newValue.trimmingCharacters(in: .whitespaces)
+        return Form {
+            Section("Profiles") {
                 ForEach(Profile.allCases, id: \.self) { profile in
-                    Toggle(profile.title, isOn: Binding(get: { active.contains(profile) },
-                                                        set: { store.applyProfile(entry.id, profile, on: $0) }))
-                        .help(profile.explanation)
-                }
-                Spacer(minLength: 0)
-            }
-            HStack(spacing: 16) {
-                heading("Read")
-                ForEach(FileCategory.allCases, id: \.self) { category in
-                    Toggle(category.title, isOn: Binding(get: { categories.contains(category.rawValue) },
-                                                         set: { store.applyCategory(entry.id, category, on: $0) }))
-                        .help("Read \(category.noun) anywhere, as macOS classifies them.")
-                }
-                ForEach(others) { rule in
-                    HStack(spacing: 4) {
-                        Text(RuleText.describe(rule)).lineLimit(1).truncationMode(.middle)
-                        Button { store.removeRuleNow(entry.id, ruleID: rule.id) } label: { Image(systemName: "xmark.circle.fill") }
-                            .buttonStyle(.borderless).foregroundStyle(.secondary).help("Remove this rule")
+                    Toggle(isOn: Binding(get: { active.contains(profile) },
+                                         set: { store.applyProfile(entry.id, profile, on: $0) })) {
+                        Text(profile.title)
+                        Text(profile.explanation)
                     }
-                    .font(.callout)
-                    .padding(.horizontal, 8).padding(.vertical, 2)
-                    .background(Color.primary.opacity(0.06), in: Capsule())
-                    .frame(maxWidth: 240)
-                    .help(RuleText.describe(rule))
                 }
-                Spacer(minLength: 0)
             }
-            HStack(spacing: 16) {
-                heading("Limits")
-                LimitField(label: "CPU seconds", value: entry.config.limits?.cpuSeconds) {
-                    store.applyLimit(entry.id, \.cpuSeconds, $0)
+            Section("Read anywhere") {
+                ForEach(FileCategory.allCases, id: \.self) { category in
+                    Toggle(category.title, isOn: Binding(get: { kinds.contains(category.rawValue) },
+                                                         set: { store.applyCategory(entry.id, category, on: $0) }))
+                        .help(category.extensions.map { ".\($0)" }.joined(separator: " "))
                 }
-                LimitField(label: "Memory MiB", value: entry.config.limits?.memoryMB) {
-                    store.applyLimit(entry.id, \.memoryMB, $0)
+            }
+            Section {
+                ForEach(others) { rule in
+                    HStack {
+                        Text(RuleText.describe(rule)).lineLimit(1).truncationMode(.middle)
+                        Spacer()
+                        Button { store.removeRuleNow(entry.id, ruleID: rule.id) } label: { Image(systemName: "minus.circle") }
+                            .buttonStyle(.borderless).help("Remove")
+                    }
                 }
-                Spacer(minLength: 0)
-                Text("These save on their own and apply on the next run.")
-                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                HStack {
+                    Picker("", selection: Bindable(store).newAccess) {
+                        ForEach(CustomAccess.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                    }
+                    .labelsHidden().fixedSize()
+                    TextField("", text: Bindable(store).newValue, prompt: Text("mp4, mkv — or a folder"))
+                        .labelsHidden()
+                        .onSubmit { if !value.isEmpty { store.addRuleNow(entry.id) } }
+                    Button("Choose…") { store.chooseFolder() }
+                    Button("Add") { store.addRuleNow(entry.id) }.disabled(value.isEmpty)
+                }
+            } header: {
+                Text("Other files and folders")
+            } footer: {
+                Text("File types count anywhere; a folder covers everything inside it.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Section("Limits") {
+                LabeledContent("CPU seconds") {
+                    LimitField(label: "none", value: entry.config.limits?.cpuSeconds) { store.applyLimit(entry.id, \.cpuSeconds, $0) }
+                }
+                LabeledContent("Memory MiB") {
+                    LimitField(label: "none", value: entry.config.limits?.memoryMB) { store.applyLimit(entry.id, \.memoryMB, $0) }
+                }
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    func heading(_ text: String) -> some View {
-        Text(text).foregroundStyle(.secondary).frame(width: 56, alignment: .leading)
+        .formStyle(.grouped)
     }
 }

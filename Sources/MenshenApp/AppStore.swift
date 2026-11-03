@@ -498,6 +498,24 @@ final class AppStore {
     }
 
     /// Removes one of your rules right away (from the Dashboard).
+    /// Adds your rule from Add Permission to the saved config right away: a path (starting with
+    /// / or ~) is a folder, anything else a list of file types. The sheet stays open.
+    func addRuleNow(_ key: String) {
+        let access = newAccess, value = newValue.trimmingCharacters(in: .whitespaces), env = environment
+        guard !value.isEmpty else { return }
+        do {
+            if value.hasPrefix("/") || value.hasPrefix("~") {
+                update(key) { $0.addCustom(access, folder: value, environment: env) }
+            } else {
+                let types = try MenshenConfig.fileExtensions(value)
+                update(key) { $0.addCustom(access, fileTypes: types) }
+            }
+            newValue = ""
+        } catch {
+            message = "\(error)"
+        }
+    }
+
     func removeRuleNow(_ key: String, ruleID: String) {
         update(key) { $0.removeCustom(ruleID) }
     }
