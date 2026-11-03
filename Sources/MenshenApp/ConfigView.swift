@@ -21,10 +21,7 @@ struct ConfigView: View {
             // After learning, add or take away capabilities: profiles and file kinds first, then
             // rule by rule in the table. These switches save on their own.
             if let entry = item.entry {
-                HStack(alignment: .top, spacing: 16) {
-                    ProfilesCard(store: store, entry: entry).frame(maxWidth: .infinity, alignment: .top)
-                    FileAccessCard(store: store, entry: entry).frame(maxWidth: .infinity, alignment: .top)
-                }
+                CapabilitiesBar(store: store, entry: entry)
             }
             HStack {
                 Picker("Show", selection: Bindable(store).ruleFilter) {
@@ -182,5 +179,81 @@ struct AddPermissionSheet: View {
         }
         .padding()
         .frame(width: 440)
+    }
+}
+
+/// Capabilities you change after learning, kept to three lines so the rule table keeps the
+/// room: profiles, file kinds (plus your own file rules) and limits. Explanations are in the
+/// tooltips. These save on their own and apply the next time the app runs.
+struct CapabilitiesBar: View {
+    let store: AppStore
+    let entry: AppEntry
+
+    var body: some View {
+        let active = Set(entry.config.profiles ?? [])
+        let yours = entry.config.rules.filter { $0.source == .custom }
+        let categories = Set(yours.compactMap(\.label))
+        let others = yours.filter { $0.label == nil }
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 16) {
+                heading("Profiles")
+                ForEach(Profile.allCases, id: \.self) { profile in
+                    Toggle(profile.title, isOn: Binding(get: { active.contains(profile) },
+                                                        set: { store.applyProfile(entry.id, profile, on: $0) }))
+                        .help(profile.explanation)
+                }
+                Spacer(minLength: 0)
+            }
+            HStack(spacing: 16) {
+                heading("Read")
+                ForEach(FileCategory.allCases, id: \.self) { category in
+                    Toggle(category.title, isOn: Binding(get: { categories.contains(category.rawValue) },
+                                                         set: { store.applyCategory(entry.id, category, on: $0) }))
+                        .help("Read \(category.noun) anywhere, as macOS classifies them.")
+                }
+                ForEach(others) { rule in
+                    HStack(spacing: 4) {
+                        Text(RuleText.describe(rule)).lineLimit(1).truncationMode(.middle)
+                        Button { store.removeRuleNow(entry.id, ruleID: rule.id) } label: { Image(systemName: "xmark.circle.fill") }
+                            .buttonStyle(.borderless).foregroundStyle(.secondary).help("Remove this rule")
+                    }
+                    .font(.callout)
+                    .padding(.horizontal, 8).padding(.vertical, 2)
+                    .background(Color.primary.opacity(0.06), in: Capsule())
+                    .frame(maxWidth: 240)
+                    .help(RuleText.describe(rule))
+                }
+                Button("Add File Types or Folder…") {
+                    store.newKind = .fileTypes
+                    store.permissionAppliesNow = true
+                    store.addingPermission = true
+                }
+                Spacer(minLength: 0)
+            }
+            HStack(spacing: 16) {
+                heading("Limits")
+                LimitField(label: "CPU seconds", value: entry.config.limits?.cpuSeconds) {
+                    store.applyLimit(entry.id, \.cpuSeconds, $0)
+                }
+                LimitField(label: "Memory MiB", value: entry.config.limits?.memoryMB) {
+                    store.applyLimit(entry.id, \.memoryMB, $0)
+                }
+                Spacer(minLength: 0)
+                Text("These save on their own and apply on the next run. Protections stay on.")
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.primary.opacity(0.07)))
+        .sheet(isPresented: Binding(get: { store.addingPermission && store.permissionAppliesNow },
+                                    set: { if !$0 { store.addingPermission = false; store.permissionAppliesNow = false } })) {
+            AddPermissionSheet(store: store, key: entry.id)
+        }
+    }
+
+    func heading(_ text: String) -> some View {
+        Text(text).foregroundStyle(.secondary).frame(width: 56, alignment: .leading)
     }
 }
