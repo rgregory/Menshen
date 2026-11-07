@@ -224,16 +224,16 @@ import Testing
 
 /// M-1: runs that start in the same second get separate logs.
 @Suite struct LogFileTests {
-    @Test func sameSecondRunsGetTheirOwnLog() throws {
+    @Test(arguments: ["jsonl", "ndjson"]) func sameSecondRunsGetTheirOwnLog(ext: String) throws {
         let dir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("menshen-log-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: dir) }
-        let (a, urlA) = try NDJSONWriter.create(in: dir, stem: "20261102-130000", ext: "jsonl")
-        let (b, urlB) = try NDJSONWriter.create(in: dir, stem: "20261102-130000", ext: "jsonl")
+        let (a, urlA) = try NDJSONWriter.create(in: dir, stem: "20261102-130000", ext: ext)
+        let (b, urlB) = try NDJSONWriter.create(in: dir, stem: "20261102-130000", ext: ext)
         a.write(["run": "a", "line": "first and longer"])
         b.write(["run": "b"])
         a.close(); b.close()
-        #expect(urlA.lastPathComponent == "20261102-130000.jsonl")
-        #expect(urlB.lastPathComponent == "20261102-130000-2.jsonl")
+        #expect(urlA.lastPathComponent == "20261102-130000.\(ext)")
+        #expect(urlB.lastPathComponent == "20261102-130000-2.\(ext)")
         #expect(try String(contentsOf: urlA, encoding: .utf8).contains("\"a\""))
         #expect(!(try String(contentsOf: urlA, encoding: .utf8).contains("\"b\"")))
         #expect(Library.date(of: urlB) == Library.date(of: urlA), "the suffix doesn't hide the run's time")

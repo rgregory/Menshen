@@ -71,8 +71,7 @@ public enum Learn {
         let profile = learnDir.appendingPathComponent("learn.sb")
         try SBPLCompiler.learnProfile.write(to: profile, atomically: true, encoding: .utf8)
         let onEvent = options.onEvent
-        let captureURL = learnDir.appendingPathComponent("\(fileStamp()).ndjson")
-        let capture = try NDJSONWriter(captureURL)
+        let (capture, captureURL) = try NDJSONWriter.create(in: learnDir, stem: fileStamp(), ext: "ndjson")
         defer { capture.close() }
 
         say("learning \(target.identity.name) (\(target.identity.executable)). Use the app normally, then quit it\(options.duration.map { " or wait \(Int($0))s" } ?? "").")
