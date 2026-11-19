@@ -125,13 +125,18 @@ public enum Learn {
         guard !captures.isEmpty, missing.isEmpty else {
             // A partial rebuild would silently drop rules the app needs.
             throw MenshenError.refused(captures.isEmpty
-                ? "the config lists no learn captures; run `menshen learn` instead"
+                ? (previous.analysis == nil
+                    ? "the config lists no learn captures; run `menshen learn` instead"
+                    : "this config was analyzed, not learned; run `menshen analyze` again to refresh it, or `menshen learn` for an exact fit")
                 : "learn capture(s) missing: \(missing.joined(separator: ", ")); run `menshen learn` instead")
         }
         let t = previous.target
         let target = ResolvedTarget(identity: t, bundlePath: t.path == t.executable ? nil : t.path,
                                     isAppleSigned: false, hasAppSandbox: false)
-        var config = regenerate(target: target, normalPath: t.path, captures: captures, runs: previous.learning.runs,
+        // A rebuild from a baseline that carries captures (analyze --force) has runs 0 stored,
+        // but the captures are from at least one real run.
+        var config = regenerate(target: target, normalPath: t.path, captures: captures,
+                                runs: max(previous.learning.runs, 1),
                                 warnings: previous.learning.warnings, previous: previous, keepEdits: true,
                                 environment: environment)
         config.learning.warnings = config.learning.warnings.reduce(into: []) { if !$0.contains($1) { $0.append($1) } }
@@ -240,7 +245,8 @@ public enum Enforce {
         // A replaced app runs from its hidden location; its own-bundle rules must follow it.
         let config = stored.rebased(to: target.identity.path)
 
-        let text = SBPLCompiler(environment: environment).compile(config, source: configURL.path)
+        let text = SBPLCompiler(environment: environment).compile(config, source: configURL.path,
+                                                                   configPath: configURL.path)
         if let error = SBPLCompiler.validate(text) {
             throw MenshenError.failed("the compiled profile doesn't load:\n\(error)")
         }

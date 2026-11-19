@@ -121,7 +121,8 @@ struct OverviewRow: View {
         if let date = store.overview[item.id]?.date {
             parts.append("Last run \(date.formatted(date: .abbreviated, time: .shortened))")
         }
-        return parts.isEmpty ? "Learned" : parts.joined(separator: " · ")
+        if parts.isEmpty { return entry.config.analysis == nil ? "Learned" : "Analyzed" }
+        return parts.joined(separator: " · ")
     }
 }
 

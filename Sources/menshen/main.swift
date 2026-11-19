@@ -5,6 +5,7 @@ let usage = """
     menshen \(menshenVersion) — confine a macOS app with Seatbelt.
 
     USAGE
+      menshen analyze <App.app | binary> [--config PATH] [--force]
       menshen learn   <App.app | binary> [--duration 10m] [--merge] [--config PATH] [-- app-args…]
       menshen enforce <App.app | binary | config.json> [--duration 10m] [--config PATH] [--allow-changed] [-- app-args…]
       menshen rebuild <App.app | binary | config.json> [--config PATH]
@@ -17,6 +18,13 @@ let usage = """
       menshen restore <App.app | bundle-id>
       menshen swaps                   list replaced apps
 
+    analyze  Write a config from the app on disk, without running it: the access a Mac app
+             needs to start, its own data folders, the file kinds its bundle says it opens,
+             and the hardening overlay (credentials, other apps' data, persistence and risky
+             services denied). Everything else, including the network, is denied until you
+             switch it on. Quickest way to a protected app; learn it for an exact fit.
+             --force replaces a config that was learned; its captures are kept, so `rebuild`
+             puts the learned rules back, and the previous config is backed up.
     learn    Run the app with everything allowed and every operation reported, then write a
              config: the learned baseline plus hardening (credentials, other apps' data and
              persistence locations are denied even if the app touched them; those are FLAGGED).
@@ -51,6 +59,7 @@ struct Parsed {
     var duration: TimeInterval?
     var merge = false
     var allowChanged = false
+    var force = false
     var config: URL?
     var extra: [String] = []
     var write = false
@@ -85,6 +94,7 @@ func parse(_ argv: [String]) throws -> Parsed {
             p.config = URL(fileURLWithPath: (v as NSString).expandingTildeInPath)
         case "--merge": p.merge = true
         case "--allow-changed": p.allowChanged = true
+        case "--force": p.force = true
         case "--write": p.write = true
         case "--none": p.none = true
         case "--cpu-seconds", "--memory-mb":
@@ -104,6 +114,16 @@ func parse(_ argv: [String]) throws -> Parsed {
         }
     }
     return p
+}
+
+func runAnalyze(_ p: Parsed, _ target: String) throws -> Int32 {
+    let r = try Analyze.run(target: target, configPath: p.config, force: p.force)
+    let denials = r.config.hardening.filter { $0.action == .deny }.count
+    say("config: \(r.configURL.path)  (\(r.config.rules.count) baseline rules, \(denials) protections)")
+    if let backup = r.backupURL { say("previous config backed up to \(backup.path)") }
+    for line in r.findings { say("  \(line)") }
+    say("run it with `menshen enforce \(target)` and read the log; `menshen learn` fits it exactly.")
+    return 0
 }
 
 func runLearn(_ p: Parsed, _ target: String) throws -> Int32 {
@@ -172,9 +192,10 @@ func runAllow(_ p: Parsed, _ target: String) throws -> Int32 {
         added.append(config.addCustom(access, fileTypes: try MenshenConfig.fileExtensions(types.joined(separator: " "))))
     }
     for folder in p.extra where isFolder(folder) {
+        try MenshenConfig.checkCustomFolder(folder, environment: env)
         added.append(config.addCustom(access, folder: folder, environment: env))
     }
-    if let error = SBPLCompiler.validate(SBPLCompiler(environment: env).compile(config)) {
+    if let error = SBPLCompiler.validate(SBPLCompiler(environment: env).compile(config, configPath: url.path)) {
         throw MenshenError.failed("the new rule doesn't compile, nothing saved:\n\(error)")
     }
     try config.save(to: url)
@@ -213,7 +234,7 @@ func runProfile(_ p: Parsed, _ target: String) throws -> Int32 {
         if let l = config.limits { print("limits: cpu \(l.cpuSeconds.map { "\($0)s" } ?? "none"), memory \(l.memoryMB.map { "\($0) MiB" } ?? "none")") }
         return 0
     }
-    if let error = SBPLCompiler.validate(SBPLCompiler(environment: env).compile(config)) {
+    if let error = SBPLCompiler.validate(SBPLCompiler(environment: env).compile(config, configPath: url.path)) {
         throw MenshenError.failed("the profile doesn\'t compile with these profiles, nothing saved:\n\(error)")
     }
     try config.save(to: url)
@@ -270,7 +291,7 @@ func runShow(_ p: Parsed, _ target: String) throws -> Int32 {
     options.configPath = p.config
     let env = MenshenEnvironment.current()
     let (url, config) = try Enforce.locateConfig(options, environment: env)
-    print(SBPLCompiler(environment: env).compile(config, source: url.path), terminator: "")
+    print(SBPLCompiler(environment: env).compile(config, source: url.path, configPath: url.path), terminator: "")
     return 0
 }
 
@@ -289,6 +310,7 @@ do {
     guard let target = p.target else { throw MenshenError.usage("\(p.command) needs a target\n\n\(usage)") }
     let status: Int32
     switch p.command {
+    case "analyze": status = try runAnalyze(p, target)
     case "learn": status = try runLearn(p, target)
     case "enforce": status = try runEnforce(p, target)
     case "rebuild": status = try runRebuild(p, target)

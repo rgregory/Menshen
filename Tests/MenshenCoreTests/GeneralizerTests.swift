@@ -60,6 +60,11 @@ func allow(_ op: String, _ target: String, count: Int = 1) -> SandboxEvent {
             ("\(testHome)/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock", "H-sock-agents"),
             ("\(testHome)/Library/Containers/com.maxgoedjen.Secretive.SecretAgent/Data/socket.ssh", "H-sock-agents"),
             ("\(testHome)/.gnupg/S.gpg-agent.ssh", "H-sock-agents"),
+            ("\(testHome)/.bitwarden-ssh-agent.sock", "H-sock-agents"),
+            ("\(testHome)/.ssh/proton-pass-agent.sock", "H-sock-agents"),
+            ("/opt/homebrew/var/run/yubikey-agent.sock", "H-sock-agents"),
+            ("\(testHome)/.ssh/cm-me@example.com:22", "H-sock-ssh-dir"),
+            ("\(testHome)/.ssh/sockets/me@example.com-22", "H-sock-ssh-dir"),
         ]
         for (path, id) in blocked { #expect(Hardening.socket(for: path)?.id == id, "\(path)") }
         for path in ["/private/var/run/syslog", "/private/var/run/mDNSResponder", "\(testHome)/Library/Caches/foo/ipc.sock",
@@ -266,6 +271,64 @@ func allow(_ op: String, _ target: String, count: Int = 1) -> SandboxEvent {
         let events = [allow("file-read-data", "/usr/lib/a"), allow("mach-lookup", "com.apple.x")]
         #expect(build(events).rules.map(\.id) == build(events).rules.map(\.id))
         #expect(Set(build(events).rules.map(\.id)).count == build(events).rules.count, "no ID collisions")
+    }
+
+    /// What LaunchServices opens runs outside the sandbox (ADR-008), so a learned lsopen is
+    /// flagged and denied like Apple Events, not learned.
+    @Test func lsopenIsFlaggedNotLearned() throws {
+        let c = build([allow("lsopen", ""), allow("process-fork", "")])
+        #expect(!c.rules.contains { $0.operations.contains("lsopen") })
+        #expect(c.rules.contains { $0.operations == ["process-fork"] }, "other operations are learned as before")
+        let rule = try #require(c.hardening.first { $0.id == Hardening.lsopenID })
+        #expect(rule.action == .deny && rule.flagged == true && rule.filter == .any)
+        let lines = SBPLCompiler(environment: env).compile(c).split(separator: "\n").map(String.init)
+        let hardening = try #require(lines.firstIndex { $0.hasPrefix(";; --- hardening") })
+        let deny = try #require(lines.firstIndex { $0.hasPrefix("(deny ") && $0.contains(" lsopen") })
+        #expect(deny > hardening)
+        #expect(!lines.contains { $0.hasPrefix("(allow ") && $0.contains("lsopen") })
+    }
+
+    /// An lsopen you set to allow doesn't undo No other programs: hardening is compiled after
+    /// the profiles, so its allow would win.
+    @Test func noLaunchWinsOverAnAllowedLsopen() throws {
+        var c = build([allow("lsopen", "")])
+        let i = try #require(c.hardening.firstIndex { $0.id == Hardening.lsopenID })
+        c.hardening[i].action = .allow
+        #expect(SBPLCompiler(environment: env).compile(c).contains("(allow lsopen)"))
+        c.profiles = [.noLaunch]
+        #expect(!SBPLCompiler(environment: env).compile(c).contains("(allow lsopen)"))
+    }
+
+    /// A report that names no path can't be scoped, and a rule without a filter allows the
+    /// operation everywhere. Such reports become a warning; network ones stay IP-only.
+    @Test func reportsWithoutAPathNeverAllowEverything() {
+        let c = build([
+            allow("process-exec*", ""), allow("file-write-data", ""), allow("file-read-data", "odd:form"),
+            allow("network-outbound", ""), allow("network-bind", ""),
+        ])
+        #expect(!c.rules.contains { rule in
+            rule.filter == .any && rule.operations.contains { $0.hasPrefix("file-") || $0.hasPrefix("process-exec") || $0.hasPrefix("network") }
+        })
+        #expect(learned(c, "network-outbound", .remote, "*:*")?.category == .network)
+        #expect(learned(c, "network-bind", .local, "*:*")?.category == .network)
+        #expect(c.learning.warnings.filter { $0.contains("named no path") }.count == 3)
+        #expect(SBPLCompiler(environment: env).compile(c).contains("(allow network-outbound (remote ip \"*:*\") (with report))"))
+    }
+
+    /// ~/Library's areas, hidden folders at the top of home and the system temp folder hold
+    /// every program's files: a handful of files there never becomes a rule for the whole folder.
+    @Test func sharedFoldersNeverCollapse() {
+        let prefs = (1...5).map { allow("file-read-data", "\(testHome)/Library/Preferences/com.other\($0).plist") }
+        let dotConfig = (1...5).map { allow("file-write-create", "\(testHome)/.config/tool\($0).toml") }
+        let tmp = (1...5).map { allow("file-write-create", "/private/tmp/file\($0)") }
+        let inside = (1...5).map { allow("file-write-create", "\(testHome)/.config/tool/file\($0)") }
+        let c = build(prefs + dotConfig + tmp + inside)
+        for folder in ["~/Library/Preferences", "~/.config", "/private/tmp"] {
+            #expect(!c.rules.contains { $0.filter == Filter(.subpath, folder) }, "\(folder) stays exact")
+        }
+        #expect(learned(c, "file-read*", .literal, "~/Library/Preferences/com.other1.plist") != nil)
+        #expect(learned(c, "file-write*", .literal, "/private/tmp/file1") != nil)
+        #expect(learned(c, "file-write*", .subpath, "~/.config/tool") != nil, "a folder further in still collapses")
     }
 
     @Test func learnModeDenialsBecomeAWarningNotRules() {

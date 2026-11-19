@@ -7,8 +7,8 @@ struct ConfigView: View {
 
     var body: some View {
         if item.entry == nil {
-            ContentUnavailableView("Not learned yet", systemImage: "doc.badge.gearshape",
-                                   description: Text("Learn the app first to create its config."))
+            ContentUnavailableView("No config yet", systemImage: "doc.badge.gearshape",
+                                   description: Text("Analyze or learn the app first to create its config."))
         } else {
             content
         }
@@ -52,7 +52,7 @@ struct ConfigView: View {
                 TableColumn("Access") { rule in AccessBadge(text: RuleText.access(rule.operations)) }
                     .width(min: 80, ideal: 90)
                 TableColumn("Source") { rule in
-                    Text(rule.source == .hardening ? "protection" : rule.source == .custom ? "yours" : "learned").font(.caption).foregroundStyle(.secondary)
+                    Text(sourceLabel(rule.source)).font(.caption).foregroundStyle(.secondary)
                 }
                 .width(min: 60, ideal: 70)
                 TableColumn("Seen") { rule in Text(rule.seen > 0 ? "\(rule.seen)" : "").monospacedDigit() }
@@ -109,10 +109,22 @@ struct ConfigView: View {
         }
     }
 
+    func sourceLabel(_ source: RuleSource) -> String {
+        switch source {
+        case .hardening: return "protection"
+        case .custom: return "yours"
+        case .baseline: return "baseline"
+        case .learned: return "learned"
+        }
+    }
+
     /// The first sentence of a rule's note, or what gets logged for it.
     func note(_ rule: Rule) -> String {
         if let note = rule.note {
-            return note.replacingOccurrences(of: "Not seen during learning.", with: "").trimmingCharacters(in: .whitespaces)
+            return note
+                .replacingOccurrences(of: Hardening.notSeenNote, with: "")
+                .replacingOccurrences(of: Hardening.notRunNote, with: "")
+                .trimmingCharacters(in: .whitespaces)
         }
         return rule.category.map { "logged (\($0.rawValue))" } ?? ""
     }

@@ -59,6 +59,12 @@ public struct Generalizer {
                 hits[id]!.example = "\(event.operation) \(environment.abbreviate(event.target))"
             }
         }
+        // Reports that name no path. A rule needs a filter to stay narrow: without one it would
+        // allow the operation everywhere, so these are counted and left out (denied under enforce).
+        var unscoped: [String: Int] = [:]
+        func unparsed(_ event: SandboxEvent) {
+            unscoped[event.operation, default: 0] += event.count
+        }
 
         // The app owns these folders outright: full read/write, not just the operations that
         // happened to be seen (apps often write their state only at quit, when reports get lost).
@@ -76,8 +82,9 @@ public struct Generalizer {
         for event in allowed {
             let op = event.operation
             if op == "appleevent-send" { hit(Hardening.appleEventsID, event); continue }
+            if op == "lsopen" { hit(Hardening.lsopenID, event); continue }
             if op.hasPrefix("process-exec") {
-                guard let path = Self.path(from: event.target) else { record([op], .any, .exec, event.count); continue }
+                guard let path = Self.path(from: event.target) else { unparsed(event); continue }
                 if path == Hardening.osascriptPath { hit(Hardening.osascriptID, event); continue }
                 if let entry = hardening.entry(for: path, isWrite: false) { hit(entry.id, event); continue }
                 let filter = anchors.first(where: { path.isWithin($0) }).map { Filter(.subpath, environment.abbreviate($0)) }
@@ -90,7 +97,11 @@ public struct Generalizer {
                     if op == "file-link" { warnings.append("The app made hard links; Menshen always denies file-link.") }
                     continue
                 }
-                guard let path = Self.path(from: event.target) else { record([group], .any, nil, event.count); continue }
+                guard let path = Self.path(from: event.target) else {
+                    // Reading, writing or loading code with no path would mean every file.
+                    if cls == .other { record([group], .any, nil, event.count) } else { unparsed(event) }
+                    continue
+                }
                 if (group == "file-read*" || group == "file-write*"),
                    let folder = ownFolders.first(where: { path.isWithin($0) }) {
                     record(["file-read*", "file-write*"], Filter(.subpath, environment.abbreviate(folder)), nil, event.count)
@@ -135,6 +146,10 @@ public struct Generalizer {
             default:
                 record([op], .any, nil, event.count)  // sysctl-read, system-info, process-fork, …
             }
+        }
+
+        for (op, count) in unscoped.sorted(by: { $0.key < $1.key }) {
+            warnings.append("\(count) \(op) report(s) named no path, so no rule was made from them: a rule without a path would allow that operation everywhere. If the app needs it, it shows as blocked under enforce.")
         }
 
         let rules = collapse(merged).map { key, accum in
@@ -253,7 +268,8 @@ public struct Generalizer {
             let depth = environment.expand(group.folder).split(separator: "/").count
             // Never the whole home or Darwin folder, nor every app's caches.
             let shared = ["~", MenshenEnvironment.darwinToken] + ["C", "0", "T"].map { MenshenEnvironment.darwinToken + "/" + $0 }
-            guard !shared.contains(group.folder), depth >= 2, !group.folder.hasPrefix("/dev") else { continue }
+            guard !shared.contains(group.folder), depth >= 2, !group.folder.hasPrefix("/dev"),
+                  !isSharedNamespace(group.folder) else { continue }
             let yours = group.operations == ["file-read*"] && isYourFiles(group.folder)
             guard members.count >= (yours ? Self.yourFilesReadThreshold : Self.collapseThreshold) else { continue }
             var accum = Accum()
@@ -267,6 +283,26 @@ public struct Generalizer {
             if let c = accum.category { result[key]!.category = c }
         }
         return result.map { ($0.key, $0.value) }
+    }
+
+    /// Folders that many programs share, where a handful of files says nothing about the rest:
+    /// ~/Library and its areas (every app's data and settings), hidden folders at the top of
+    /// your home (~/.config, ~/.local/share: tool configs and tokens), the system temp folders,
+    /// /Users/Shared, /Library and its areas, /Applications, and the top of a volume. Rules
+    /// there stay exact however many files were seen; folders further in still collapse.
+    func isSharedNamespace(_ folder: String) -> Bool {
+        let path = environment.expand(folder)
+        let home = environment.home
+        if path == home + "/Library" { return true }
+        for area in [home + "/Library/", "/Library/", "/Volumes/"] where path.hasPrefix(area) {
+            if !path.dropFirst(area.count).contains("/") { return true }
+        }
+        if path.hasPrefix(home + "/") {
+            let parts = path.dropFirst(home.count + 1).split(separator: "/")
+            if parts.count == 1, parts[0].hasPrefix(".") { return true }   // ~/.config, ~/.cache
+            if parts.count == 2, parts[0] == ".local" { return true }      // ~/.local/share
+        }
+        return ["/private/tmp", "/tmp", "/private/var/tmp", "/Users/Shared", "/Library", "/Applications", "/Volumes"].contains(path)
     }
 
     /// A folder of your own files: inside another volume, or in your home folder outside
@@ -328,6 +364,8 @@ public struct Generalizer {
             let h = host == "localhost" || host == "127.0.0.1" || host == "::1" ? "localhost" : "*"
             return (Filter(kind, "\(h):\(port)"), .network)
         }
-        return (.any, .network)
+        // No address in the report. A rule with no filter would also cover every Unix socket
+        // (agents, container engines, other programs' control sockets), so keep it to IP.
+        return (Filter(op == "network-outbound" ? .remote : .local, "*:*"), .network)
     }
 }

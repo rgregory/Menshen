@@ -45,8 +45,8 @@ enum SidebarScope: String, CaseIterable, Identifiable {
 
     var blurb: String {
         switch self {
-        case .unlearned: "Added apps waiting for a learning run"
-        case .overview: "Every learned app and its newest run"
+        case .unlearned: "Added apps waiting to be analyzed or learned"
+        case .overview: "Every app with a config, and its newest run"
         case .running: "Apps running under Menshen right now"
         case .review: "Apps with flagged rules to look at"
         }
@@ -55,7 +55,7 @@ enum SidebarScope: String, CaseIterable, Identifiable {
     var emptyTitle: String {
         switch self {
         case .unlearned: "Nothing waiting"
-        case .overview: "No learned apps yet"
+        case .overview: "No apps with a config yet"
         case .running: "Nothing running"
         case .review: "All clear"
         }
@@ -64,7 +64,7 @@ enum SidebarScope: String, CaseIterable, Identifiable {
     var emptyHint: String {
         switch self {
         case .unlearned: "Add an app with + or drop one on the sidebar."
-        case .overview: "Learn an app and it shows up here."
+        case .overview: "Analyze or learn an app and it shows up here."
         case .running: "Apps you start through Menshen appear here."
         case .review: "No app has flagged rules."
         }

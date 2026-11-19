@@ -143,13 +143,15 @@ struct SidebarRow: View {
         if running { parts.append("Running") }
         if let entry = item.entry {
             let runs = entry.config.learning.runs
-            parts.append("\(runs) learning run\(runs == 1 ? "" : "s")")
+            parts.append(entry.config.analysis == nil
+                ? "\(runs) learning run\(runs == 1 ? "" : "s")"
+                : "Analyzed")
             if !entry.flagged.isEmpty { parts.append("\(entry.flagged.count) flagged") }
             if entry.swap != nil { parts.append("replaced") }
         } else if let problem = store.preflightProblem(item) {
             parts.append(problem)
         } else {
-            parts.append("Not learned")
+            parts.append("Not protected")
         }
         return parts.joined(separator: " · ")
     }

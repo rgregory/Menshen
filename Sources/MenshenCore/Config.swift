@@ -13,6 +13,9 @@ public enum RuleSource: String, Codable, Sendable {
     case hardening
     /// Added by the user (e.g. "read all .mp4 files"). Kept when the app is re-learned.
     case custom
+    /// Written by `analyze` from the app on disk, not from watching it run (ADR-012).
+    /// Replaced wholesale the first time the app is learned.
+    case baseline
 }
 
 /// Risky allows that are compiled `(with report)` so they show up in the enforce log.
@@ -138,6 +141,18 @@ public struct LearningInfo: Codable, Equatable, Sendable {
     public var warnings: [String]
 }
 
+/// Set when the config came from `analyze` instead of a learn run: nothing here was observed.
+public struct AnalysisInfo: Codable, Equatable, Sendable {
+    public var analyzedAt: Date
+    /// Plain-language lines about what the bundle showed, for the Dashboard and the CLI.
+    public var findings: [String]
+
+    public init(analyzedAt: Date, findings: [String]) {
+        self.analyzedAt = analyzedAt
+        self.findings = findings
+    }
+}
+
 public struct MenshenConfig: Codable, Equatable, Sendable {
     public var schemaVersion: Int
     public var generatedBy: String
@@ -156,6 +171,8 @@ public struct MenshenConfig: Codable, Equatable, Sendable {
     public var profiles: [Profile]? = nil
     /// Hard resource limits applied at launch (not sandbox rules).
     public var limits: ResourceLimits? = nil
+    /// Present when the config was analyzed rather than learned, with what the bundle showed.
+    public var analysis: AnalysisInfo? = nil
 
     public static func load(_ url: URL) throws -> MenshenConfig {
         let decoder = JSONDecoder()
@@ -167,6 +184,7 @@ public struct MenshenConfig: Codable, Equatable, Sendable {
             throw MenshenError.failed("can't read config \(url.path): \(error)")
         }
         try config.checkRegexFilters(source: url.path)
+        try config.checkOperations(source: url.path)
         return config
     }
 
@@ -207,6 +225,49 @@ public struct MenshenConfig: Codable, Equatable, Sendable {
         }
         try fix(&rules)
         try fix(&hardening)
+    }
+
+    /// Operation names are written into the profile as they are, so only names get in: ASCII
+    /// letters, digits, `-`, `_` and `*`. Anything else (a space, a parenthesis, a line break)
+    /// could close the statement and add rules of its own.
+    ///
+    /// Specific file operations (`file-read-data`, `file-write-create`…) are widened to
+    /// `file-read*` / `file-write*`, the names Menshen writes and every protection uses. In
+    /// Seatbelt a rule naming a specific operation beats a wildcard one whatever the order
+    /// (reference row 24), so a specific allow would win over hardening and over the block on
+    /// Menshen's own files. `file-read-metadata` stays: it is always allowed anyway.
+    mutating func checkOperations(source: String) throws {
+        func fix(_ list: inout [Rule]) throws {
+            for i in list.indices {
+                var names: [String] = []
+                for op in list[i].operations {
+                    guard Self.isOperationName(op) else {
+                        throw MenshenError.refused("\(source): rule \(list[i].id) has an operation that isn't a name: \"\(op)\"")
+                    }
+                    let name = Self.wildcardOperation(op)
+                    if !names.contains(name) { names.append(name) }
+                }
+                guard !names.isEmpty else {
+                    throw MenshenError.refused("\(source): rule \(list[i].id) has no operations")
+                }
+                list[i].operations = names
+            }
+        }
+        try fix(&rules)
+        try fix(&hardening)
+    }
+
+    static func isOperationName(_ op: String) -> Bool {
+        !op.isEmpty && op.count <= 64 && op.allSatisfy { c in
+            c.isASCII && (c.isLetter || c.isNumber || c == "-" || c == "_" || c == "*")
+        }
+    }
+
+    static func wildcardOperation(_ op: String) -> String {
+        if op == "file-read-metadata" { return op }
+        if op.hasPrefix("file-read-") { return "file-read*" }
+        if op.hasPrefix("file-write-") { return "file-write*" }
+        return op
     }
 
     /// "mp4,mkv": comma-separated, each 1–16 ASCII letters or digits.
@@ -329,6 +390,22 @@ extension MenshenConfig {
                         note: "Added by you: \(category.title).")
         rule.label = category.rawValue
         return add(rule)
+    }
+
+    /// Refuses folders too broad to hand out as one rule: the whole disk, every user, your
+    /// whole home, ~/Library (every app's data, and Menshen's own) or a whole volume. Learning
+    /// never grants these either. Besides the breadth, write access to a folder lets an app
+    /// rename what is directly inside it, which carries a protected folder further in
+    /// (`~/Library/Application Support/Google/Chrome`) to a path its protection doesn't name.
+    /// Call before `addCustom(_:folder:environment:)` for a folder a person typed or picked.
+    public static func checkCustomFolder(_ folder: String, environment: MenshenEnvironment) throws {
+        let path = realPath(environment.expand(folder))
+        let home = realPath(environment.home)
+        var broad = ["/", "/Users", "/Volumes", "/private", "/private/var", home, home + "/Library"].contains(path)
+        if path.hasPrefix("/Volumes/"), !path.dropFirst("/Volumes/".count).contains("/") { broad = true }
+        if broad {
+            throw MenshenError.refused("\(environment.abbreviate(path)) is too broad for one rule: it holds other apps' data and protected folders. Choose a folder inside it.")
+        }
     }
 
     /// Allows reading (or reading and writing) everything inside a folder.

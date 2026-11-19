@@ -30,6 +30,7 @@ public enum RuleText {
         case "sysctl-write": return "Change system settings"
         case "process-fork": return "Start child processes"
         case "appleevent-send": return "Send Apple Events"
+        case "lsopen": return "Have macOS open apps, documents and links"
         default:
             if op.hasPrefix("ipc-posix") { return "Use shared memory" }
             if op.hasPrefix("mach-") { return "Use system services" }
@@ -58,6 +59,7 @@ public enum RuleText {
         case .remote, .local:
             let port = String(value.split(separator: ":").last ?? "")
             let host = value.hasPrefix("localhost") ? " on this Mac" : ""
+            if port == "*" { return "any port" + host }
             return "port \(port)" + (ports[port].map { " (\($0))" } ?? "") + host
         default:
             return value

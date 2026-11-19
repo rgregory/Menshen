@@ -20,15 +20,24 @@ struct DashboardView: View {
                                   live: false, records: store.lastRecords)
                 }
                 if let entry = item.entry {
+                    if let analysis = entry.config.analysis {
+                        AnalysisPanel(analysis: analysis)
+                    }
                     AccessSummaryView(summary: AccessSummary.make(entry.config, environment: store.environment))
                 } else {
                     GroupBox {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Menshen hasn't learned \(item.name) yet.").font(.headline)
-                            Text("Learning runs it with everything allowed and records what it does. Use it normally, then quit it. Menshen then writes a config that blocks everything else, plus sensitive locations even if the app touched them.")
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Menshen hasn't protected \(item.name) yet.").font(.headline)
+                            Text("**Analyze** reads the app on disk and writes a config without running it: the access a Mac app needs to start, its own data folders, the file kinds it says it opens — and every sensitive location denied. Quickest way to a protected app; expect some denials in the log.")
                                 .foregroundStyle(.secondary)
-                            Button("Learn \(item.name)") { store.learn(item) }
-                                .disabled(problem != nil || session?.running == true)
+                            Text("**Learn** runs it with everything allowed and records what it does. Use it normally, then quit it. Menshen then writes a config that blocks everything else, plus sensitive locations even if the app touched them. Slower, and an exact fit.")
+                                .foregroundStyle(.secondary)
+                            HStack {
+                                Button("Analyze \(item.name)") { store.analyze(item) }
+                                    .buttonStyle(.borderedProminent)
+                                Button("Learn \(item.name)") { store.learn(item) }
+                            }
+                            .disabled(problem != nil || session?.running == true)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(6)
@@ -70,6 +79,7 @@ struct StatusStrip: View {
                 }
                 Spacer()
                 if problem == nil {
+                    AnalyzeButton(store: store, item: item)
                     Button("Learn") { store.learn(item) }
                     if let entry = item.entry {
                         ReplaceButton(store: store, item: item, entry: entry)
@@ -98,7 +108,8 @@ struct StatusStrip: View {
     var stateTitle: String {
         if problem != nil { return "Can't be protected" }
         if item.entry?.swap != nil { return "Protected whenever it's opened" }
-        return item.entry == nil ? "Not learned yet" : "Learned, not running"
+        guard let entry = item.entry else { return "Not protected yet" }
+        return entry.config.analysis == nil ? "Learned, not running" : "Analyzed, not running"
     }
 
     var stateDetail: String {
@@ -106,10 +117,13 @@ struct StatusStrip: View {
         if let entry = item.entry {
             let c = entry.config
             let identity = "Team \(c.target.teamId ?? "none") · code hash \(String((c.target.cdhash ?? "none").prefix(12)))"
+            let from = c.analysis == nil
+                ? "Learned from \(c.learning.events) reports over \(c.learning.runs) run\(c.learning.runs == 1 ? "" : "s")."
+                : "Analyzed from the app on disk, never watched running."
             if let swap = entry.swap {
                 return "Opening it from the Dock, Finder or Spotlight runs it under Menshen. Original (untouched): \(swap.hiddenPath). \(identity)"
             }
-            return "Learned from \(c.learning.events) reports over \(c.learning.runs) run\(c.learning.runs == 1 ? "" : "s"). Replace it to protect it however it's opened, or Enforce to run it protected now. \(identity)"
+            return "\(from) Replace it to protect it however it's opened, or Enforce to run it protected now. \(identity)"
         }
         return item.appPath
     }
@@ -132,6 +146,30 @@ struct Metric: View {
         }
         .lineLimit(1)
         .fixedSize()
+    }
+}
+
+/// What the bundle showed, for a config that was analyzed instead of learned.
+struct AnalysisPanel: View {
+    let analysis: AnalysisInfo
+
+    var body: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(Array(analysis.findings.enumerated()), id: \.offset) { _, line in
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Image(systemName: "circle.fill").font(.system(size: 4)).foregroundStyle(.tertiary)
+                        Text(line).font(.callout).foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(4)
+        } label: {
+            Label("Analysis · \(analysis.analyzedAt.formatted(date: .abbreviated, time: .shortened))",
+                  systemImage: "doc.text.magnifyingglass").font(.headline)
+        }
     }
 }
 
@@ -224,6 +262,42 @@ struct AccessBadge: View {
         case "on", "limit": return .green
         default: return .secondary
         }
+    }
+}
+
+/// Analyze, with a confirmation only when it would replace what the app learned.
+struct AnalyzeButton: View {
+    let store: AppStore
+    let item: AppItem
+
+    /// A config built from real runs: replacing it throws those observations away.
+    var learned: Bool {
+        guard let config = item.entry?.config else { return false }
+        return config.analysis == nil || config.learning.runs > 0
+    }
+
+    var body: some View {
+        Button(title) {
+            if learned { store.confirmingAnalyze = true } else { store.analyze(item) }
+        }
+        .help("Write a config from the app on disk, without running it: what a Mac app needs to start, its own data, what its bundle declares — and every sensitive location denied")
+        .confirmationDialog("Analyze \(item.name)?", isPresented: Bindable(store).confirmingAnalyze) {
+            Button("Analyze", role: .destructive) { store.analyze(item, force: true) }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("""
+                \(item.name) already has a config learned from \
+                \(item.entry?.config.learning.events ?? 0) reports. Analyzing replaces its learned rules \
+                with a baseline read from the app on disk. Your own rules, profiles, limits and switches \
+                are kept, the previous config is backed up, and the learn captures stay — Rebuild or Learn \
+                brings the learned rules back.
+                """)
+        }
+    }
+
+    var title: String {
+        guard let config = item.entry?.config else { return "Analyze" }
+        return config.analysis == nil ? "Analyze…" : "Re-analyze"
     }
 }
 

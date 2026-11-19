@@ -43,6 +43,7 @@ enum RuleFilter: String, CaseIterable, Identifiable {
     case all = "All"
     case flagged = "Flagged"
     case learned = "Learned"
+    case baseline = "Baseline"
     case hardening = "Hardening"
     case yours = "Yours"
     var id: String { rawValue }
@@ -114,7 +115,8 @@ final class AppStore {
     /// The app waiting for "Remove from Menshen" confirmation.
     var removing: AppItem?
 
-    // Replace / Restore confirmation
+    // Analyze over a learned config, and Replace / Restore confirmations
+    var confirmingAnalyze = false
     var confirmingReplace = false
     var confirmingRestore = false
 
@@ -265,6 +267,27 @@ final class AppStore {
     }
 
     // MARK: - Sessions
+
+    /// Writes a config from the app on disk, without running it: what a Mac app of this shape
+    /// needs, what its bundle declares, and every sensitive location denied (ADR-012).
+    func analyze(_ item: AppItem, force: Bool = false) {
+        if sessions[item.id]?.running == true {
+            message = "\(item.name) is running under Menshen. Stop it first."
+            return
+        }
+        do {
+            let result = try Analyze.run(target: item.appPath, force: force, environment: environment)
+            drafts[item.id] = nil
+            select(item.id)
+            tab = .dashboard
+            refresh()
+            if let backup = result.backupURL {
+                message = "Re-analyzed \(item.name). The previous config was backed up to \(backup.lastPathComponent)."
+            }
+        } catch {
+            message = "\(error)"
+        }
+    }
 
     func learn(_ item: AppItem) {
         let session = LiveSession(kind: .learn, appName: item.name)
@@ -423,6 +446,7 @@ final class AppStore {
             case .all: kept = true
             case .flagged: kept = rule.flagged == true
             case .learned: kept = rule.source == .learned
+            case .baseline: kept = rule.source == .baseline
             case .hardening: kept = rule.source == .hardening
             case .yours: kept = rule.source == .custom
             }
@@ -443,7 +467,8 @@ final class AppStore {
     func save(_ key: String) {
         guard let draft = drafts[key], let entry = entries.first(where: { $0.id == key }) else { return }
         // Same check the CLI makes: don't save a config whose profile the kernel won't load.
-        if let error = SBPLCompiler.validate(SBPLCompiler(environment: environment).compile(draft)) {
+        if let error = SBPLCompiler.validate(SBPLCompiler(environment: environment)
+            .compile(draft, configPath: entry.configURL.path)) {
             message = "Not saved: the profile wouldn't load.\n\n\(error)"
             return
         }
@@ -464,6 +489,7 @@ final class AppStore {
         do {
             let types = kind == .fileTypes ? try MenshenConfig.fileExtensions(value) : []
             if kind == .folder && value.isEmpty { throw MenshenError.usage("choose a folder") }
+            if kind == .folder { try MenshenConfig.checkCustomFolder(value, environment: env) }
             let change: (inout MenshenConfig) -> Void = { config in
                 switch kind {
                 case .category: config.addCustom(access, category: category)
@@ -505,6 +531,7 @@ final class AppStore {
         guard !value.isEmpty else { return }
         do {
             if value.hasPrefix("/") || value.hasPrefix("~") {
+                try MenshenConfig.checkCustomFolder(value, environment: env)
                 update(key) { $0.addCustom(access, folder: value, environment: env) }
             } else {
                 let types = try MenshenConfig.fileExtensions(value)
@@ -579,6 +606,7 @@ final class AppStore {
         guard let draft = drafts[key] else { return }
         let source = (isDirty(key) ? "\(entry.configURL.path) with unsaved edits" : entry.configURL.path)
             + ", generated \(Date().formatted(date: .omitted, time: .standard))"
-        sbplText = SBPLCompiler(environment: MenshenEnvironment.current()).compile(draft, source: source)
+        sbplText = SBPLCompiler(environment: MenshenEnvironment.current())
+            .compile(draft, source: source, configPath: entry.configURL.path)
     }
 }

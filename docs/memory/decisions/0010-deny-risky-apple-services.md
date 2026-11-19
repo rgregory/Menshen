@@ -37,3 +37,15 @@ A general deny list is the only way to tighten ADR-004 without seeing lookups. E
 - Narrowing the prefix to learned names: impossible, learning doesn't see them (ADR-004).
 - Seeding from App Sandbox's `application.sb`: tighter, but parses a private, generated file.
 - Denying the clipboard and keychain too: breaks normal apps by default.
+
+## Amendment, 2026-11-19: the camera, capture sessions and location
+
+Three more services are denied for every app, the same way:
+
+- `H-svc-camera` — `com.apple.cmio*`, CoreMediaIO's camera assistants.
+- `H-svc-capture` — `com.apple.coremedia.capture*`, AVFoundation capture sessions: the microphone and camera path apps normally use.
+- `H-svc-location` — `com.apple.locationd*`, Core Location.
+
+The reason is TCC's shape, not Seatbelt's: a privacy permission is per app and sticky, so an app you once allowed to use the microphone keeps that permission for every later version of itself, whatever it turns into. Menshen can take it back per app without touching the TCC database, and the enforce log says when an app wanted it.
+
+**Limit, stated plainly:** an app that drives CoreAudio's HAL (`com.apple.audio.audiohald`) directly can still open an input device. That service carries all audio playback as well, so denying it would silence every app; the split between "playing audio" and "recording audio" does not exist at the Mach-service level. The service names above come from Apple's own sandbox profiles and have not yet been checked against a learn capture on this Mac — see `docs/memory/unresolved.md`.

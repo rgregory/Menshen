@@ -19,11 +19,16 @@ public struct SBPLCompiler {
     /// Compact SBPL: rules with the same action, operations and logging are merged into one
     /// statement, and learned rules already covered by an always-on rule are left out. The JSON
     /// config keeps every rule with its ID and counts; this file is only what the kernel needs.
-    public func compile(_ stored: MenshenConfig, source: String? = nil) -> String {
+    /// `source` only names the config in the header comment; `configPath` is the file itself,
+    /// which the app must not be able to read or rewrite.
+    public func compile(_ stored: MenshenConfig, source: String? = nil, configPath: String? = nil) -> String {
         let config = withCurrentProtections(stored)
         let t = config.target
+        // The header is a comment, and the name and ID in it come from Info.plist and the JSON:
+        // a line break there would end the comment and start SBPL of its own.
+        let header = "Menshen profile for \(t.name)\(t.bundleId.map { " (\($0))" } ?? "")\(source.map { ", from \($0)" } ?? ""). Edit the JSON, not this file."
         var out = [
-            ";; Menshen profile for \(t.name)\(t.bundleId.map { " (\($0))" } ?? "")\(source.map { ", from \($0)" } ?? ""). Edit the JSON, not this file.",
+            ";; " + Self.oneLine(header),
             "(version 1)",
             "(deny default)",
             "(import \"system.sb\")",
@@ -56,7 +61,10 @@ public struct SBPLCompiler {
 
         let learned = withoutShadowed(config.rules.filter { $0.source != .custom && !coveredByAlwaysOn($0, config) }, config)
         let yours = withoutShadowed(config.rules.filter { $0.source == .custom }, config)
-        for (title, rules) in [(";; --- learned", learned),
+        let baseTitle = config.analysis == nil
+            ? ";; --- learned"
+            : ";; --- baseline (analyzed from the app bundle, not from watching it run)"
+        for (title, rules) in [(baseTitle, learned),
                                (";; --- your rules (before hardening, so protected locations stay blocked)", yours)] where !rules.isEmpty {
             out.append("")
             out.append(title)
@@ -65,8 +73,14 @@ public struct SBPLCompiler {
         out += profileSection(config, own: own)
         out.append("")
         out.append(";; --- hardening (last, so it wins)")
-        out += hardeningStatements(config.hardening, logging: config.logging, config: config)
-        out += selfProtection(config)
+        var hardening = config.hardening
+        if profiles.contains(.noLaunch) {
+            // Hardening comes after the profiles, so an lsopen you set to allow would undo No
+            // other programs' deny. The profile wins.
+            for i in hardening.indices where hardening[i].id == Hardening.lsopenID { hardening[i].action = .deny }
+        }
+        out += hardeningStatements(withResolvedPaths(hardening), logging: config.logging, config: config)
+        out += selfProtection(config, configPath: configPath ?? source.flatMap { $0.hasSuffix(".json") ? $0 : nil })
         out.append("(deny file-link)")
         out.append("")
         return out.joined(separator: "\n")
@@ -150,14 +164,42 @@ public struct SBPLCompiler {
 
     /// Every profile gets every current protection: ones added to Menshen after a config was
     /// learned are appended (as deny), so nobody has to re-learn to pick them up.
+    ///
+    /// What a protection covers also comes from Menshen, not from the file: the config only
+    /// decides allow or deny. A stored rule whose path or operations were edited, or were
+    /// written by an older version, can't keep showing "SSH keys: blocked" while blocking
+    /// something else.
     func withCurrentProtections(_ config: MenshenConfig) -> MenshenConfig {
-        let have = Set(config.hardening.map(\.id))
-        let current = Hardening(environment: environment, ownAnchors: config.anchors.map(environment.expand)).rules(hits: [:])
-        let missing = current.filter { !have.contains($0.id) }
-        guard !missing.isEmpty else { return config }
+        let current = Hardening(environment: environment, ownAnchors: config.anchors.map(environment.expand))
+            .rules(hits: [:], unseen: config.analysis == nil ? Hardening.notSeenNote : Hardening.notRunNote)
+        let builtIn = Dictionary(current.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         var copy = config
-        copy.hardening += missing
+        for i in copy.hardening.indices {
+            guard let rule = builtIn[copy.hardening[i].id] else { continue }
+            copy.hardening[i].operations = rule.operations
+            copy.hardening[i].filter = rule.filter
+        }
+        let have = Set(copy.hardening.map(\.id))
+        copy.hardening += current.filter { !have.contains($0.id) }
         return copy
+    }
+
+    /// Seatbelt matches the path a file really has. When a protected folder or file is a
+    /// symlink (`~/.ssh` or `~/.zshrc` kept in a dotfiles folder), the rule on its name never
+    /// matches, so the place it points to gets the same rule.
+    func withResolvedPaths(_ rules: [Rule]) -> [Rule] {
+        var out: [Rule] = []
+        for rule in rules {
+            out.append(rule)
+            guard rule.filter.kind == .subpath || rule.filter.kind == .literal, let raw = rule.filter.value else { continue }
+            let named = environment.expand(raw)
+            let real = realPath(named)
+            guard real != named else { continue }
+            var twin = rule
+            twin.filter.value = environment.abbreviate(real)
+            out.append(twin)
+        }
+        return out
     }
 
     /// The hardening section in layers, because the order inside it matters (later wins):
@@ -185,7 +227,11 @@ public struct SBPLCompiler {
     /// can't be switched off or edited away; compiled after hardening, so nothing overrides it.
     /// A root that contains the home folder or the app itself (a test setup, an odd
     /// MENSHEN_DATA) is skipped rather than blocking everything.
-    func selfProtection(_ config: MenshenConfig) -> [String] {
+    ///
+    /// `configPath` is the file this config lives in. Kept outside the data folder (`--config`,
+    /// a .json target), it and the profile written next to it get the same block. It is a path,
+    /// not the header's `source` label, which the GUI also uses for "with unsaved edits".
+    func selfProtection(_ config: MenshenConfig, configPath: String? = nil) -> [String] {
         let target = config.target.path
         func usable(_ root: String) -> Bool {
             root != "/" && !environment.home.isWithin(root) && !target.isWithin(root)
@@ -195,16 +241,25 @@ public struct SBPLCompiler {
         for root in roots where usable(root) && !readWrite.contains(where: { root.isWithin($0) }) {
             readWrite.append(root)
         }
+        var ownFiles: [String] = []
+        if let configPath {
+            let file = realPath(configPath)
+            let compiled = (file as NSString).deletingPathExtension + ".sb"
+            for candidate in [file, compiled] where usable(candidate) && !readWrite.contains(where: { candidate.isWithin($0) }) {
+                ownFiles.append(candidate)
+            }
+        }
         var writeOnly: [String] = []
         for record in Swap.records(environment) {
             writeOnly.append(record.appPath)
             if record.hiddenPath != target { writeOnly.append(record.hiddenPath) }
         }
         writeOnly = writeOnly.filter { p in usable(p) && !readWrite.contains { p.isWithin($0) } }
-        guard !readWrite.isEmpty || !writeOnly.isEmpty else { return [] }
+        guard !readWrite.isEmpty || !ownFiles.isEmpty || !writeOnly.isEmpty else { return [] }
         var out = ["", ";; --- Menshen's own files (always, can't be switched off)"]
-        if !readWrite.isEmpty {
-            out.append(statement("deny", ["file-read*", "file-write*"], readWrite.map { "(subpath \(path($0)))" }, report: false))
+        if !readWrite.isEmpty || !ownFiles.isEmpty {
+            out.append(statement("deny", ["file-read*", "file-write*"],
+                                 readWrite.map { "(subpath \(path($0)))" } + ownFiles.map { "(literal \(path($0)))" }, report: false))
         }
         if !writeOnly.isEmpty {
             out.append(statement("deny", ["file-write*"], writeOnly.map { "(subpath \(path($0)))" }, report: false))
@@ -361,6 +416,12 @@ public struct SBPLCompiler {
         if p == environment.home { return "home-dir" }
         if p.hasPrefix(environment.home + "/") { return "(home \(quote(String(p.dropFirst(environment.home.count)))))" }
         return quote(p)
+    }
+
+    /// Text for a `;;` comment: line breaks and other control characters become spaces.
+    static func oneLine(_ text: String) -> String {
+        let breaks = CharacterSet.controlCharacters.union(.newlines)
+        return String(text.unicodeScalars.map { breaks.contains($0) ? " " : Character($0) })
     }
 
     func quote(_ s: String) -> String {

@@ -103,15 +103,37 @@ public struct Hardening: Sendable {
         Entry(id: "H-accounts", title: "macOS internet accounts", path: "~/Library/Accounts", protection: .readWrite),
         Entry(id: "H-tcc", title: "Privacy permissions database (TCC)", path: "~/Library/Application Support/com.apple.TCC", protection: .readWrite),
         Entry(id: "H-bitwarden", title: "Bitwarden data", path: "~/Library/Application Support/Bitwarden", protection: .readWrite),
+        // Browser profiles that sit next to the folders above, not inside them.
+        Entry(id: "H-chrome-beta", title: "Chrome Beta profile", path: "~/Library/Application Support/Google/Chrome Beta", protection: .readWrite),
+        Entry(id: "H-chrome-canary", title: "Chrome Canary profile", path: "~/Library/Application Support/Google/Chrome Canary", protection: .readWrite),
+        Entry(id: "H-chromium", title: "Chromium profile", path: "~/Library/Application Support/Chromium", protection: .readWrite),
+        Entry(id: "H-vivaldi", title: "Vivaldi profile", path: "~/Library/Application Support/Vivaldi", protection: .readWrite),
+        Entry(id: "H-thunderbird", title: "Thunderbird mail and passwords", path: "~/Library/Thunderbird", protection: .readWrite),
+        // Git runs hooks, aliases and core.sshCommand from its config, outside any sandbox.
+        Entry(id: "H-gitconfig", title: "Git config (persistence)", path: "~/.gitconfig", protection: .write),
+        Entry(id: "H-git-config-dir", title: "Git config folder (persistence)", path: "~/.config/git", protection: .write),
+        // One library read under /opt/homebrew or /usr makes the whole tree readable (system
+        // read roots), and `var` is where Homebrew's database servers keep their data.
+        Entry(id: "H-brew-var", title: "Homebrew service data (local databases)", path: "/opt/homebrew/var", protection: .readWrite),
+        Entry(id: "H-brew-var-intel", title: "Homebrew service data on Intel Macs (local databases)", path: "/usr/local/var", protection: .readWrite),
     ]
 
     /// Apple services an ordinary app doesn't need and that give a compromised one leverage:
     /// installing privileged helpers or packages, admin-password prompts, background items that
-    /// survive the app, and screen recording. Denied by name after the always-on
+    /// survive the app, screen recording, the camera, capture sessions and your location.
+    /// Denied by name after the always-on
     /// `com.apple.` allow (ADR-004), so the later, narrower rule wins. Learning can't see service
     /// lookups, so these are never FLAGGED; a blocked one shows in the enforce log, and setting
     /// the rule to allow re-enables it for that app. The clipboard and the keychain are left
     /// alone: too many normal apps need them.
+    ///
+    /// Camera, capture and location are here because TCC is per-app and sticky: once you have
+    /// granted an app the microphone, nothing but the sandbox stands between it and the mic,
+    /// however rarely it has a reason to listen. What this does NOT cover: an app that drives
+    /// CoreAudio's HAL (`com.apple.audio.audiohald`) directly can still open an input device,
+    /// because that same service carries all audio playback, so denying it would silence every
+    /// app. AVFoundation capture — what apps normally use for the microphone — goes through
+    /// `com.apple.coremedia.capture*` and is denied.
     public struct Service: Sendable {
         public var id: String
         public var title: String
@@ -132,6 +154,10 @@ public struct Hardening: Sendable {
         // containers' environment. The ADR-004 prefix allow would otherwise let any app reach it.
         Service(id: "H-svc-container", title: "Apple's container engine (runs containers that can mount your home folder)",
                 name: "com.apple.container.", prefix: true),
+        Service(id: "H-svc-camera", title: "The camera (CoreMediaIO assistants)", name: "com.apple.cmio", prefix: true),
+        Service(id: "H-svc-capture", title: "Microphone and camera capture sessions (AVFoundation)",
+                name: "com.apple.coremedia.capture", prefix: true),
+        Service(id: "H-svc-location", title: "Your location (Core Location)", name: "com.apple.locationd", prefix: true),
     ]
 
     /// Unix-domain sockets that hand an app more than it should have: a container engine runs
@@ -152,8 +178,13 @@ public struct Hardening: Sendable {
                pattern: #"/(docker|podman|containerd|colima|orbstack)[^/]*\.sock$"#),
         Socket(id: "H-sock-ssh-agent", title: "The macOS ssh-agent socket (signs as you with your SSH keys)",
                pattern: #"^(/private)?/tmp/(com\.apple\.launchd\.[^/]+/Listeners|ssh-[^/]+/agent\.[0-9]+)$"#),
-        Socket(id: "H-sock-agents", title: "Other SSH and GPG agent sockets (1Password, Secretive, gpg-agent)",
-               pattern: #"/(agent\.sock|socket\.ssh|S\.gpg-agent[^/]*)$"#),
+        Socket(id: "H-sock-agents",
+               title: "Other SSH and GPG agent sockets (1Password, Secretive, Bitwarden, Proton Pass, yubikey-agent, gpg-agent)",
+               pattern: #"/(agent\.sock|socket\.ssh|S\.gpg-agent[^/]*|[^/]*ssh-agent[^/]*\.sock|proton-pass-agent\.sock|yubikey-agent\.sock)$"#),
+        // ssh's shared connections (ControlMaster) usually keep their sockets here; connecting
+        // to one is a shell on the remote host, with no key or password asked.
+        Socket(id: "H-sock-ssh-dir", title: "Sockets in your SSH folder (a shared SSH connection is a shell on the remote host)",
+               pattern: #"/\.ssh/"#),
     ]
 
     /// The socket entry that blocks connecting to `path`, if any.
@@ -161,9 +192,18 @@ public struct Hardening: Sendable {
         sockets.first { path.range(of: $0.pattern, options: .regularExpression) != nil }
     }
 
+    /// How a protection's note ends when learning never saw the app touch it, and when the
+    /// config was analyzed instead of learned (nothing was watched at all).
+    public static let notSeenNote = "Not seen during learning."
+    public static let notRunNote = "Denied without running the app."
+
     public static let appleEventsID = "H-apple-events"
     public static let osascriptID = "H-osascript"
     public static let osascriptPath = "/usr/bin/osascript"
+    /// `lsopen`: asking LaunchServices to open an app, document or link. Whatever it opens
+    /// starts from launchd, outside the sandbox, and the check carries no path or URL to filter
+    /// on (ADR-008), so allowing it is allowing every program. Flag-and-deny like Apple Events.
+    public static let lsopenID = "H-lsopen"
 
     let environment: MenshenEnvironment
     /// Absolute paths of folders the app owns. Sensitive entries never block the app's own data.
@@ -185,8 +225,9 @@ public struct Hardening: Sendable {
         }
     }
 
-    /// Compiles the overlay. `hits` maps entry IDs to what learning saw (flag-and-deny).
-    public func rules(hits: [String: Hit]) -> [Rule] {
+    /// Compiles the overlay. `hits` maps entry IDs to what learning saw (flag-and-deny);
+    /// `unseen` ends the note of everything not hit (`analyze` passes `notRunNote`).
+    public func rules(hits: [String: Hit], unseen: String = Hardening.notSeenNote) -> [Rule] {
         var rules: [Rule] = []
         for entry in Self.entries {
             let full = environment.expand(entry.path)
@@ -201,7 +242,7 @@ public struct Hardening: Sendable {
             rules.append(Rule(id: entry.id, action: .deny, operations: operations, filter: filter,
                               source: .hardening, seen: hits[entry.id]?.count ?? 0,
                               flagged: hits[entry.id] == nil ? nil : true,
-                              note: note(entry.title, hits[entry.id])))
+                              note: note(entry.title, hits[entry.id], unseen)))
             // The deny above would also block the app's own folder inside it (e.g. its own
             // group container), so re-allow exactly that folder right after.
             for own in ownAnchors where entry.pattern == nil && own.isWithin(full) && own != full {
@@ -223,22 +264,28 @@ public struct Hardening: Sendable {
                               filter: Filter(.socketPattern, socket.pattern), source: .hardening,
                               seen: hits[socket.id]?.count ?? 0,
                               flagged: hits[socket.id] == nil ? nil : true,
-                              note: note(socket.title, hits[socket.id])))
+                              note: note(socket.title, hits[socket.id], unseen)))
         }
         rules.append(Rule(id: Self.appleEventsID, action: .deny, operations: ["appleevent-send"], filter: .any,
                           source: .hardening, seen: hits[Self.appleEventsID]?.count ?? 0,
                           flagged: hits[Self.appleEventsID] == nil ? nil : true,
-                          note: note("Sending Apple Events to other apps", hits[Self.appleEventsID])))
+                          note: note("Sending Apple Events to other apps", hits[Self.appleEventsID], unseen)))
         rules.append(Rule(id: Self.osascriptID, action: .deny, operations: ["process-exec*"],
                           filter: Filter(.literal, Self.osascriptPath), source: .hardening,
                           seen: hits[Self.osascriptID]?.count ?? 0,
                           flagged: hits[Self.osascriptID] == nil ? nil : true,
-                          note: note("Running AppleScript via osascript", hits[Self.osascriptID])))
+                          note: note("Running AppleScript via osascript", hits[Self.osascriptID], unseen)))
+        // No filter, like a learned lsopen allow: a later filter-less rule wins over an earlier one (ADR-008).
+        rules.append(Rule(id: Self.lsopenID, action: .deny, operations: ["lsopen"], filter: .any,
+                          source: .hardening, seen: hits[Self.lsopenID]?.count ?? 0,
+                          flagged: hits[Self.lsopenID] == nil ? nil : true,
+                          note: note("Having macOS open apps, documents and links (what it opens runs outside the sandbox)",
+                                     hits[Self.lsopenID], unseen)))
         return rules
     }
 
-    private func note(_ title: String, _ hit: Hit?) -> String {
-        guard let hit else { return "\(title). Not seen during learning." }
+    private func note(_ title: String, _ hit: Hit?, _ unseen: String) -> String {
+        guard let hit else { return "\(title). \(unseen)" }
         return "\(title). FLAGGED: seen \(hit.count)× during learning (e.g. \(hit.example)). Denied by default; set action to \"allow\" to permit."
     }
 }

@@ -102,6 +102,11 @@ public final class LogTap: @unchecked Sendable {
                 lock.withLock { notices += 1 }
                 continue
             }
+            // Seatbelt reports come from the kernel, which logs as pid 0 (reference row 14). The
+            // stream's predicate only names the sender image, and any program can ship an image
+            // called "Sandbox" and log lines that read like reports, so a line with a pid of its
+            // own is dropped.
+            if let pid = object["processID"] as? NSNumber, pid.intValue != 0 { continue }
             guard let message = object["eventMessage"] as? String else { continue }
             if message.contains("menshen-canary-") {
                 lock.withLock {

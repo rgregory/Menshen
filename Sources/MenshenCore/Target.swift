@@ -15,7 +15,10 @@ public struct TargetIdentity: Codable, Equatable, Sendable {
     public var key: String {
         let raw = bundleId ?? signingId ?? name
         let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: ".-_"))
-        return String(raw.unicodeScalars.map { allowed.contains($0) ? Character($0) : "_" })
+        let mapped = String(raw.unicodeScalars.map { allowed.contains($0) ? Character($0) : "_" })
+        // The key becomes a file and folder name under Menshen's data: never empty, ".", ".."
+        // or hidden (a bundle ID is just a string in Info.plist).
+        return mapped.isEmpty || mapped.hasPrefix(".") ? "_" + mapped : mapped
     }
 }
 

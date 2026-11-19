@@ -4,6 +4,7 @@ The details behind the [README](README.md): what each part of the app does, the 
 
 ## The app
 
+- **Analyze:** on the Dashboard of an app that has no config yet (and `menshen analyze`), this writes one from the app on disk without running it — see [below](#analyze-without-running-the-app). Re-analyze refreshes a baseline; over a learned config it asks first and keeps the captures, so Rebuild undoes it.
 - **Dashboard:** a **live activity** panel while the app runs: network (by port and socket), disk (by folder, read or write), launches, services, devices and blocked attempts, plus a recent-events feed. It also works for replaced apps opened from the Dock, by following the launcher's log as it grows. When nothing is running, it shows the same for the last run. Below it is a plain-language summary of what the app *may* access.
 - **Session:** learn or enforce with a live event table, and Stop.
 - **History:** past learn captures and enforce logs, filterable (blocked, network, launches, outside writes) and searchable.
@@ -58,12 +59,14 @@ The launcher runs the original under `enforce` with any documents it was opened 
 
 ```sh
 swift build -c release
+.build/release/menshen analyze /Applications/VLC.app          # a config without running it
 .build/release/menshen learn /Applications/VLC.app            # use the app normally, then quit it
 .build/release/menshen show /Applications/VLC.app             # review the compiled SBPL
 .build/release/menshen enforce /Applications/VLC.app
 ```
 
 ```
+menshen analyze <App.app | binary> [--config PATH] [--force]
 menshen learn   <App.app | binary> [--duration 10m] [--merge] [--config PATH] [-- app-args…]
 menshen enforce <App.app | binary | config.json> [--duration 10m] [--config PATH] [--allow-changed] [-- app-args…]
 menshen show    <App.app | binary | config.json> [--config PATH]
@@ -91,6 +94,19 @@ The compiled profile is kept short and auditable. Rules with the same action and
 
 ## How it works
 
+### Analyze, without running the app
+
+`analyze` builds a config from the app on disk (ADR-012). Nothing is launched. Four parts:
+
+1. **Sane defaults** every Mac app needs: read-only `/System`, `/usr`, `/bin`, `/sbin`, `/Library`, `/private/etc`, `/private/var/db` (and `/opt/homebrew` when it's there), read-only `~/Library/Fonts`, read/write on the app's own folders, the device sinks (`/dev/null`, `/dev/zero`, `/dev/random`, `/dev/urandom`, `/dev/tty`, `/dev/fd`), and `sysctl-read`, `system-info`, `process-fork`, `ipc-posix-shm*`. Own folders are the bundle, the shared temp folder, every `~/Library` or Darwin-cache folder already named after the app, the app-group containers from its entitlements, and the ones macOS creates for an app the first time it runs (`~/Library/Application Support/<id>`, `Caches/<id>`, `Preferences/<id>.plist`, `Saved Application State/<id>.savedState`, `HTTPStorages/<id>`, `WebKit/<id>`, `Logs/<name>`).
+2. **What the bundle declares.** Connecting out is allowed only on evidence — the `com.apple.security.network.client` entitlement, `NSAppTransportSecurity` or `NSLocalNetworkUsageDescription` in Info.plist, or an embedded Sparkle updater. Listening needs the server entitlement or `NSBonjourServices`. `CFBundleDocumentTypes` becomes one read-only file-kinds rule (capped at 60 kinds; `pem key p12 pfx kdbx env netrc gpg asc ppk jks keystore` are never granted, and `public.data`/`public.item` is ignored as a claim on everything).
+3. **Explicit denials** for the capabilities that stay closed — connecting out, listening, running other programs, talking to drivers — written as `deny` rules rather than left to the default, so each is one toggle in Config with a note saying why it's off. At the kernel an unfiltered deny only sets the operation's default, so it never overrides the app's own bundle or a narrower allow (reference row 19).
+4. **The hardening overlay in full**, compiled last as always. Nothing is FLAGGED: nothing was watched.
+
+Rules carry `source: "baseline"` and IDs starting `B-`. The config records `analysis` (when, and the findings shown on the Dashboard) and `learning.runs: 0`. Analyzing over a learned config asks first (`--force` on the command line) and keeps its captures, so `rebuild` is the undo; re-analyzing a baseline keeps your rules, profiles, limits and switched-off rules; learning an analyzed app replaces the baseline with what the app actually did.
+
+### Learn, by watching it run
+
 - **Learn** runs `sandbox-exec` with `(allow default (with report))`, which makes the kernel log every operation in SBPL's own vocabulary. Those lines are never saved to the log store, so Menshen reads them from a live `log stream`. It keeps running a sandboxed canary until the canary's denial appears in the stream, and only then launches the app. Lines are filtered to the app's process tree.
 - **Generalize:** paths collapse onto what owns them.
   - The bundle is read and exec only.
@@ -101,12 +117,13 @@ The compiled profile is kept short and auditable. Rules with the same action and
   - Anything else stays an exact path, and becomes a folder rule once a folder has 4+ files.
   - Mach services (looked up or registered), preference domains, IOKit classes, ports, shared-memory names and written sysctls stay exact.
   - `menshen rebuild <app>` regenerates a config from its saved captures, so configs learned earlier pick up these rules without running the app again.
-- **Hardening** rules are always present, and older configs pick up new ones automatically when compiled. Besides credential folders, browsers, mail and messages, shell history and startup items, a **sanity set** covers secrets by name anywhere in your home (`.env*`, `*.pem *.key *.p12 *.pfx *.kdbx`, `id_rsa*`/`id_ed25519*`, `.git-credentials`), more credential stores (`.npmrc`, `.pypirc`, `.azure`, `.config/op`, `.password-store`, `.pgpass`…), chat-app sessions (Slack, Discord, Signal, Telegram, WhatsApp) and personal data (Contacts, Calendars, the Photos library). The full list is in [`Hardening.swift`](Sources/MenshenCore/Hardening.swift). The app's own data inside a protected folder (its own group container, or a browser's own profile) is re-allowed.
+- **Hardening** rules are always present, and older configs pick up new ones automatically when compiled. Besides credential folders, browsers, mail and messages, shell history and startup items, a **sanity set** covers secrets by name anywhere in your home (`.env*`, `*.pem *.key *.p12 *.pfx *.kdbx`, `id_rsa*`/`id_ed25519*`, `.git-credentials`), more credential stores (`.npmrc`, `.pypirc`, `.azure`, `.config/op`, `.password-store`, `.pgpass`…), chat-app sessions (Slack, Discord, Signal, Telegram, WhatsApp) and personal data (Contacts, Calendars, the Photos library). Apple services an app doesn't need are denied by name too: privileged-helper installs, admin authorization, package installs, login items, screen recording, Apple's container engine, and — because a TCC permission is per app and sticky — the camera, AVFoundation capture sessions (the microphone path) and Core Location. The full list is in [`Hardening.swift`](Sources/MenshenCore/Hardening.swift). The app's own data inside a protected folder (its own group container, or a browser's own profile) is re-allowed.
 
 Design records: [`docs/DECISIONS.md`](docs/DECISIONS.md). Platform research: [`docs/reference/apple-app-sandbox.md`](docs/reference/apple-app-sandbox.md).
 
 ## Known limits
 
+- **An analyzed config is a guess from the bundle**, not a fit. An app that does something it never declared is denied, and the enforce log says what. Learn it when you want it exact.
 - **Can't wrap** apps that already use App Sandbox (the kernel refuses a second sandbox and the app crashes) or Apple's own apps (launch constraints). Preflight refuses both.
 - **Learning can't see checks made in user space:** mach-service lookups (checked by launchd) and preference reads (checked by cfprefsd) are mostly not reported in learn mode. So every profile always allows `com.apple.*` mach services and Apple/global preference reads ([ADR-004](docs/memory/decisions/0004-allow-apple-services-and-preferences.md)). With those, VLC runs under enforce with 0 denials. A *non-Apple* service the app uses only shows up as a denial in the enforce log.
 - **Logs show what the kernel reports, which isn't always everything.** Blocking never fails, but reports can go missing: when the app blocks and quits within milliseconds, sometimes for no visible reason, and nearly all of them while another process floods sandbox reports (another Menshen learn run, for example). Don't read an empty log as proof that nothing was blocked. ([findings 12, 25, 26](docs/reference/apple-app-sandbox.md))

@@ -118,6 +118,85 @@ import Testing
         let current = Hardening.entries.first { $0.id == "H-key-files" }!.pattern
         #expect(c.hardening.first { $0.id == "H-key-files" }?.filter.value == current)
     }
+
+    // MARK: Operation names and the header comment
+
+    /// Operation names go into the profile unquoted, so anything but a name is refused on load.
+    @Test(arguments: ["file-read*) (allow default", "file-read* file-write*", "", "lsopen\n(allow default)", "file-read*;"])
+    func operationsThatArentNamesAreRefusedOnLoad(_ op: String) {
+        #expect(throws: MenshenError.self) {
+            _ = try roundTrip { $0.rules.append(Rule(action: .allow, operations: [op], filter: .any, source: .custom)) }
+        }
+        #expect(!MenshenConfig.isOperationName(op))
+    }
+
+    /// A rule naming a specific operation beats a wildcard one whatever the order (reference
+    /// row 24), so a specific allow would beat hardening and the block on Menshen's own files.
+    @Test func specificFileOperationsAreWidenedOnLoad() throws {
+        let c = try roundTrip { c in
+            c.rules.append(Rule(id: "L-specific", action: .allow, operations: ["file-write-data", "file-write-create", "file-read-data"],
+                                filter: Filter(.subpath, "/tmp/menshen-unit"), source: .custom))
+            c.rules.append(Rule(id: "L-other", action: .allow, operations: ["file-ioctl", "file-read-metadata", "mach-lookup"],
+                                filter: .any, source: .learned))
+        }
+        #expect(c.rules.first { $0.id == "L-specific" }?.operations == ["file-write*", "file-read*"])
+        #expect(c.rules.first { $0.id == "L-other" }?.operations == ["file-ioctl", "file-read-metadata", "mach-lookup"])
+    }
+
+    /// The app's name comes from Info.plist (or the JSON) and lands in a comment: a line break
+    /// in it must not start a line of SBPL.
+    @Test func headerCommentStaysOneLine() {
+        var c = config()
+        c.target.name = "Foo\n(allow default)\r(allow lsopen)"
+        let text = SBPLCompiler(environment: env).compile(c)
+        let lines = text.split(whereSeparator: \.isNewline).map(String.init)
+        #expect(lines.first?.hasPrefix(";; Menshen profile for Foo (allow default) (allow lsopen) (com.example.foo)") == true)
+        #expect(!lines.contains { $0.hasPrefix("(allow default)") || $0.hasPrefix("(allow lsopen)") })
+        #expect(lines[1] == "(version 1)")
+    }
+
+    /// What a protection covers comes from Menshen; the config only decides allow or deny.
+    @Test func editedHardeningRuleCompilesAsMenshenDefinesIt() throws {
+        var c = config()
+        let i = try #require(c.hardening.firstIndex { $0.id == "H-ssh" })
+        c.hardening[i].filter = Filter(.subpath, "/nonexistent")
+        c.hardening[i].operations = ["file-write*"]
+        let text = SBPLCompiler(environment: env).compile(c)
+        #expect(text.contains("(deny file-read* file-write*\n    (subpath (home \"/.ssh\"))"))
+        #expect(!text.contains("/nonexistent"))
+        c.hardening[i].action = .allow
+        #expect(SBPLCompiler(environment: env).compile(c).contains("(subpath (home \"/.ssh\"))"), "your allow is kept")
+    }
+
+    /// The camera, capture sessions and location are denied for every app, after the always-on
+    /// `com.apple.` allow, so the later and narrower rule wins (ADR-010).
+    @Test func cameraCaptureAndLocationAreDeniedForEveryApp() throws {
+        let c = config()
+        for id in ["H-svc-camera", "H-svc-capture", "H-svc-location"] {
+            let rule = try #require(c.hardening.first { $0.id == id })
+            #expect(rule.action == .deny && rule.operations == ["mach-lookup"])
+            #expect(rule.filter.kind == .globalNamePrefix)
+        }
+        let lines = SBPLCompiler(environment: env).compile(c).split(separator: "\n").map(String.init)
+        let allowApple = try #require(lines.firstIndex { $0.hasPrefix("(allow mach-lookup")
+            && $0.contains("(global-name-prefix \"com.apple.\")") })
+        for name in ["com.apple.cmio", "com.apple.coremedia.capture", "com.apple.locationd"] {
+            let deny = try #require(lines.firstIndex { $0.contains("(global-name-prefix \"\(name)\")") },
+                                    "\(name) is denied somewhere")
+            #expect(deny > allowApple, "\(name) is denied after the blanket Apple allow")
+        }
+        // Audio playback is untouched: denying it would silence every app (see Hardening.services).
+        #expect(!Hardening.services.contains { $0.name.hasPrefix("com.apple.audio") })
+    }
+
+    /// A config kept outside the data folder (--config) is the app's leash just the same.
+    @Test func configOutsideTheDataFolderIsDeniedToo() {
+        let text = SBPLCompiler(environment: env).compile(config(), configPath: "\(testHome)/Documents/foo.json")
+        #expect(text.contains("(literal (home \"/Documents/foo.json\"))"))
+        #expect(text.contains("(literal (home \"/Documents/foo.sb\"))"))
+        let own = text.components(separatedBy: ";; --- Menshen's own files").last ?? ""
+        #expect(own.contains("foo.json") && own.hasSuffix("(deny file-link)\n"), "in the last section, after hardening")
+    }
 }
 
 /// The same fixes against the real kernel.
@@ -301,6 +380,33 @@ import Testing
         #expect(RuleText.describe(rule) == "Connect out to port 443 (HTTPS), any host")
         let local = Rule(action: .allow, operations: ["network-outbound"], filter: Filter(.remote, "localhost:8080"), source: .learned)
         #expect(RuleText.describe(local) == "Connect out to port 8080 (HTTP alt) on this Mac")
+        let any = Rule(action: .allow, operations: ["network-outbound"], filter: Filter(.remote, "*:*"), source: .learned)
+        #expect(RuleText.describe(any) == "Connect out to any port, any host")
+    }
+
+    /// A bundle ID is just a string in Info.plist, and the key made from it becomes a folder
+    /// name: ".." would point `forget` at Menshen's data folder and ~/Library/Logs.
+    @Test func keysAreNeverDotNames() {
+        var id = identity(path: "/Applications/Foo.app", team: nil)
+        id.bundleId = ".."
+        #expect(id.key == "_..")
+        id.bundleId = ".hidden"
+        #expect(id.key == "_.hidden")
+        id.bundleId = "a/../b"
+        #expect(id.key == "a_.._b")
+        id.bundleId = "com.example.foo"
+        #expect(id.key == "com.example.foo")
+        for key in ["..", ".", "", "a/b"] {
+            #expect(throws: MenshenError.self) { _ = try Library.forget(key, env) }
+        }
+    }
+
+    @Test func wholeHomeOrVolumeIsRefusedAsAFolderRule() throws {
+        for folder in ["/", "~", "~/Library", "/Volumes", "/Volumes/Backup"] {
+            #expect(throws: MenshenError.self) { try MenshenConfig.checkCustomFolder(folder, environment: env) }
+        }
+        try MenshenConfig.checkCustomFolder("~/Movies", environment: env)
+        try MenshenConfig.checkCustomFolder("/Volumes/Backup/Videos", environment: env)
     }
 
     @Test func sharedTempIsNotShownAsOwnData() {

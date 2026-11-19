@@ -33,7 +33,9 @@ public struct MenshenEnvironment: Sendable {
     /// `MENSHEN_DATA=/some/dir` keeps configs, captures and logs together in one folder
     /// (handy for testing, or for keeping configs in a repo).
     public static func current() -> MenshenEnvironment {
-        let home = NSHomeDirectory()
+        // The path the kernel sees: with a home folder reached through a symlink, every `~`
+        // rule (hardening included) would name a path Seatbelt never matches.
+        let home = realPath(NSHomeDirectory())
         let lib = URL(fileURLWithPath: home).appendingPathComponent("Library")
         if let custom = ProcessInfo.processInfo.environment["MENSHEN_DATA"], !custom.isEmpty {
             let root = URL(fileURLWithPath: (custom as NSString).expandingTildeInPath)
@@ -51,7 +53,7 @@ public struct MenshenEnvironment: Sendable {
     /// The current user's environment with explicit data and log folders (used by launchers,
     /// which carry the folders they were created with).
     public static func current(dataRoot: URL, logsRoot: URL) -> MenshenEnvironment {
-        MenshenEnvironment(home: NSHomeDirectory(), dataRoot: dataRoot, logsRoot: logsRoot,
+        MenshenEnvironment(home: realPath(NSHomeDirectory()), dataRoot: dataRoot, logsRoot: logsRoot,
                            userTempRoot: darwinUserRoot())
     }
 

@@ -97,6 +97,11 @@ public enum Library {
     /// Returns where each item ended up in the Trash.
     @discardableResult
     public static func forget(_ key: String, _ environment: MenshenEnvironment) throws -> [URL] {
+        // The key is used as a path component: "..", "." or "" would name Menshen's own
+        // folders or their parents (~/Library/Logs), and those would go to the Trash.
+        guard !key.isEmpty, !key.hasPrefix("."), !key.contains("/") else {
+            throw MenshenError.usage("\"\(key)\" isn't an app's ID")
+        }
         if let swap = Swap.records(environment).first(where: { $0.key == key }) {
             throw MenshenError.refused("\(swap.appPath) is replaced by a Menshen launcher. Restore it first.")
         }
